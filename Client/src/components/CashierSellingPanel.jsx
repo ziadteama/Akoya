@@ -1,5 +1,5 @@
 ﻿import React, { useState, useEffect } from "react";
-import { Box, Grid, useMediaQuery, useTheme, Paper, Typography } from "@mui/material";
+import { Box, Grid, useMediaQuery, useTheme, Paper, Typography, Button, Divider } from "@mui/material";
 import axios from "axios";
 import TicketCategoryPanel from "../components/TicketCategoryPanel";
 import TicketSelectorPanel from "../components/TicketSelectorPanel";
@@ -11,7 +11,7 @@ const CashierSellingPanel = () => {
   const theme = useTheme();
   const isSmallScreen = useMediaQuery(theme.breakpoints.down('md'));
   const isSquareScreen = useMediaQuery('(max-aspect-ratio: 4/3)');
-  const isExtraSmallScreen = useMediaQuery(theme.breakpoints.down('sm')); // Add this
+  const isExtraSmallScreen = useMediaQuery(theme.breakpoints.down('sm'));
   
   // Define baseUrl at the top of the component
   const baseUrl = window.runtimeConfig?.apiBaseUrl;
@@ -134,26 +134,27 @@ const CashierSellingPanel = () => {
     }
   };
 
+  // SIMPLIFIED: Enhanced checkout function - direct processing, no confirmation
   const handleCheckout = async (checkoutData) => {
-    // Check for baseUrl here too
     if (!baseUrl) {
       notify.error("API configuration missing. Unable to process checkout.");
       return;
     }
-    
-    // Convert Arabic categories back to original English for backend
-    const modifiedCheckoutData = {
-      ...checkoutData,
-      tickets: checkoutData.tickets?.map(ticket => {
-        const originalType = types.find(t => t.id === ticket.type_id);
-        return {
-          ...ticket,
-          category: originalType?.originalCategory || ticket.category
-        };
-      })
-    };
-    
+
     try {
+      // Convert Arabic categories back to original English for backend
+      const modifiedCheckoutData = {
+        ...checkoutData,
+        tickets: checkoutData.tickets?.map(ticket => {
+          const originalType = types.find(t => t.id === ticket.type_id);
+          return {
+            ...ticket,
+            category: originalType?.originalCategory || ticket.category
+          };
+        })
+      };
+
+      // Send to backend - CheckoutPanel already handled overpayment logic
       const response = await axios.post(`${baseUrl}/api/tickets/sell`, modifiedCheckoutData);
       
       notify.success(`Order completed successfully! Order #${response.data.order_id || 'Created'}`);
@@ -171,6 +172,14 @@ const CashierSellingPanel = () => {
     setTicketCounts({});
   };
 
+  // Calculate total for change confirmation dialog
+  const calculateTotal = () => {
+    return Object.entries(ticketCounts).reduce((total, [typeId, count]) => {
+      const type = types.find(t => t.id === parseInt(typeId));
+      return total + (type?.price || 0) * count;
+    }, 0);
+  };
+
   return (
     <Box sx={{ 
       height: "calc(100vh - 80px)", 
@@ -183,7 +192,7 @@ const CashierSellingPanel = () => {
       <Paper 
         elevation={1} 
         sx={{ 
-          p: isExtraSmallScreen ? 0.25 : 0.5,  // Even smaller on mobile
+          p: isExtraSmallScreen ? 0.25 : 0.5,
           m: isExtraSmallScreen ? 0.25 : 0.5, 
           backgroundColor: "#E0F7FF",
           borderRadius: 2,
@@ -196,7 +205,7 @@ const CashierSellingPanel = () => {
             color: "#00AEEF", 
             fontWeight: 600, 
             textAlign: "center",
-            fontSize: isExtraSmallScreen ? "0.8rem" : "0.9rem"  // Smaller on mobile
+            fontSize: isExtraSmallScreen ? "0.8rem" : "0.9rem"
           }}
         >
           🎫 Ticket Sales System
@@ -206,9 +215,9 @@ const CashierSellingPanel = () => {
       {/* Main Content Area */}
       <Box sx={{ 
         flex: 1, 
-        p: isExtraSmallScreen ? 0.25 : 0.5,  // Smaller padding on mobile
+        p: isExtraSmallScreen ? 0.25 : 0.5,
         display: "flex",
-        gap: isExtraSmallScreen ? 0.25 : 0.5,  // Smaller gap on mobile
+        gap: isExtraSmallScreen ? 0.25 : 0.5,
         overflow: "hidden",
         minHeight: 0
       }}>
@@ -218,15 +227,15 @@ const CashierSellingPanel = () => {
             width: "100%", 
             display: "flex", 
             flexDirection: "column",
-            gap: 0.25,  // Very tight gaps for mobile
+            gap: 0.25,
             height: "100%",
             overflow: "hidden"
           }}>
             {/* Top: Categories - More compact */}
             <Box sx={{ 
-              height: "18%",  // Slightly smaller
-              minHeight: "100px",  // Reduced min height
-              maxHeight: "130px",  // Reduced max height
+              height: "18%",
+              minHeight: "100px",
+              maxHeight: "130px",
               overflow: "hidden" 
             }}>
               <TicketCategoryPanel
@@ -241,7 +250,7 @@ const CashierSellingPanel = () => {
             {/* Middle: Ticket Selector - Takes most space */}
             <Box sx={{ 
               flex: 1,
-              minHeight: "250px",  // Ensure minimum usable space
+              minHeight: "250px",
               overflow: "hidden"
             }}>
               <TicketSelectorPanel
@@ -256,9 +265,9 @@ const CashierSellingPanel = () => {
             
             {/* Bottom: Checkout Summary - More compact */}
             <Box sx={{ 
-              height: "22%",  // Slightly smaller
-              minHeight: "130px",  // Reduced min height
-              maxHeight: "180px",  // Reduced max height
+              height: "22%",
+              minHeight: "130px",
+              maxHeight: "180px",
               overflow: "hidden" 
             }}>
               <CheckoutPanel
@@ -373,4 +382,3 @@ const CashierSellingPanel = () => {
 };
 
 export default CashierSellingPanel;
-

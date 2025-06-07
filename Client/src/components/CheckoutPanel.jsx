@@ -19,8 +19,6 @@ import { ToggleButton, ToggleButtonGroup } from "@mui/material";
 import DeleteIcon from "@mui/icons-material/Delete";
 import PrintIcon from '@mui/icons-material/Print';
 import axios from "axios";
-// Remove config import
-// import config from "../config";
 import { notify } from "../utils/toast";
 
 const CheckoutPanel = ({ ticketCounts, types, onCheckout, onClear, mode = "new", ticketIds = [], ticketDetails = [] }) => {
@@ -66,7 +64,7 @@ const CheckoutPanel = ({ ticketCounts, types, onCheckout, onClear, mode = "new",
         console.log("Meals data fetched:", response.data.slice(0, 2));
         setMeals(response.data.map(meal => ({
           ...meal,
-          price: Number(meal.price || 0)  // Ensure meal prices are numbers
+          price: Number(meal.price || 0)
         })));
       } catch (error) {
         console.error("Failed to fetch meals:", error);
@@ -87,9 +85,7 @@ const CheckoutPanel = ({ ticketCounts, types, onCheckout, onClear, mode = "new",
   const selected = useMemo(() => {
     try {
       if (mode === "existing" && normalizedTicketIds.length > 0) {
-        // For existing tickets, create a representation for each ticket 
         return normalizedTicketIds.map(id => {
-          // Find the matching detail for this ticket ID
           const matchingDetail = normalizedTicketDetails.find(td => td && td.id === id) || {};
           
           return {
@@ -100,7 +96,6 @@ const CheckoutPanel = ({ ticketCounts, types, onCheckout, onClear, mode = "new",
           };
         });
       } else {
-        // For new tickets, filter types with counts
         return normalizedTypes.filter(t => 
           t && typeof t === 'object' && t.id && 
           Number(normalizedTicketCounts[t.id] || 0) > 0
@@ -116,14 +111,12 @@ const CheckoutPanel = ({ ticketCounts, types, onCheckout, onClear, mode = "new",
   const ticketTotal = useMemo(() => {
     try {
       if (mode === "existing" && Array.isArray(selected)) {
-        // For existing tickets, simply sum up the individual ticket prices
         return selected.reduce((sum, ticket) => {
           if (!ticket || typeof ticket !== 'object') return sum;
           const price = Number(ticket.price || 0);
           return sum + price;
         }, 0);
       } else if (Array.isArray(selected)) {
-        // For new tickets, multiply each price by quantity
         return selected.reduce((sum, ticket) => {
           if (!ticket || typeof ticket !== 'object') return sum;
           const count = Number(normalizedTicketCounts[ticket.id] || 0);
@@ -248,18 +241,62 @@ const CheckoutPanel = ({ ticketCounts, types, onCheckout, onClear, mode = "new",
         return;
       }
 
-      // Structure payments data
-      const payments = [];
+      // Calculate total paid for display purposes
+      const totalPaid = selectedMethods
+        .filter(method => method !== 'discount')
+        .reduce((sum, method) => sum + getAmount(method), 0);
 
-      // Add regular payment methods
-      selectedMethods
-        .filter(method => method !== 'discount' && getAmount(method) > 0)
-        .forEach(method => {
+      // MODIFIED: Structure payments data - handle overpayment for any scenario
+      const payments = [];
+      const paymentMethods = selectedMethods.filter(method => method !== 'discount' && getAmount(method) > 0);
+      
+      // Calculate if there's overpayment
+      const isOverpaid = totalPaid > finalTotal;
+      
+      if (isOverpaid) {
+        // There's overpayment - adjust payments to match required total
+        let remainingTotal = finalTotal;
+        
+        // Sort payment methods to handle cash last (if present)
+        const sortedMethods = paymentMethods.sort((a, b) => {
+          if (a === 'cash') return 1; // Cash goes last
+          if (b === 'cash') return -1; // Cash goes last
+          return 0;
+        });
+        
+        sortedMethods.forEach((method, index) => {
+          const actualAmount = getAmount(method);
+          
+          if (index === sortedMethods.length - 1) {
+            // Last payment method gets whatever is remaining
+            const amountToSend = Math.max(0, remainingTotal);
+            if (amountToSend > 0) {
+              payments.push({
+                method,
+                amount: parseFloat(amountToSend.toFixed(2))
+              });
+            }
+          } else {
+            // Non-last payment methods get their full amount or remaining total (whichever is smaller)
+            const amountToSend = Math.min(actualAmount, remainingTotal);
+            if (amountToSend > 0) {
+              payments.push({
+                method,
+                amount: parseFloat(amountToSend.toFixed(2))
+              });
+              remainingTotal -= amountToSend;
+            }
+          }
+        });
+      } else {
+        // No overpayment - send actual amounts
+        paymentMethods.forEach(method => {
           payments.push({
             method,
             amount: parseFloat(getAmount(method).toFixed(2))
           });
         });
+      }
 
       // Add discount as a separate payment if present
       if (discountAmount > 0) {
@@ -273,7 +310,9 @@ const CheckoutPanel = ({ ticketCounts, types, onCheckout, onClear, mode = "new",
       let payload = {
         user_id,
         description: description.trim(),
-        payments
+        payments,
+        total_amount: finalTotal, // Always send the correct required total
+        gross_total: ticketTotal + mealTotal
       };
       
       if (mode === "existing") {
@@ -298,8 +337,15 @@ const CheckoutPanel = ({ ticketCounts, types, onCheckout, onClear, mode = "new",
       }
 
       console.log("Submitting payload:", payload);
+      console.log("Actual amounts paid (for display):", {
+        totalPaid,
+        changeAmount: Math.max(0, totalPaid - finalTotal),
+        paymentBreakdown: selectedMethods
+          .filter(method => method !== 'discount' && getAmount(method) > 0)
+          .map(method => ({ method, actualAmount: getAmount(method) }))
+      });
 
-      // Call the onCheckout callback with the payload data
+      // Call onCheckout - backend will receive correct total
       await onCheckout(payload);
       
       // Close dialog
@@ -318,14 +364,20 @@ const CheckoutPanel = ({ ticketCounts, types, onCheckout, onClear, mode = "new",
       });
       setMealCounts({});
       
-      // Show success message
-      notify.success("✅ Checkout successful! Opening print windows...", {
-        duration: 3000
+      // Show success message with change info if applicable
+      let successMessage = "✅ Checkout successful! Opening print windows...";
+      if (totalPaid > finalTotal) {
+        const changeAmount = totalPaid - finalTotal;
+        successMessage = `✅ Checkout successful! Change: EGP ${changeAmount.toFixed(2)} - Opening print windows...`;
+      }
+      
+      notify.success(successMessage, {
+        duration: 4000
       });
       
-      // Start the print process - FIXED to ensure exactly 2 copies
+      // Start the print process with change info
       setTimeout(() => {
-        openTwoPrintWindows();
+        openTwoPrintWindows(totalPaid);
       }, 500);
       
     } catch (error) {
@@ -334,32 +386,29 @@ const CheckoutPanel = ({ ticketCounts, types, onCheckout, onClear, mode = "new",
     }
   };
 
-  // NEW FUNCTION: Open exactly 2 print windows simultaneously
-  const openTwoPrintWindows = () => {
-    const receiptData = buildReceiptData();
+  // Open exactly 2 print windows simultaneously
+  const openTwoPrintWindows = (actualTotalPaid = null) => {
+    const receiptData = buildReceiptData(actualTotalPaid);
     
     notify.info("📄 Opening two print windows...", { duration: 2000 });
     
-    // Open both windows at the same time with a small delay between them
     const printWindow1 = openSinglePrintWindow(receiptData, 'Copy 1');
     
     setTimeout(() => {
       const printWindow2 = openSinglePrintWindow(receiptData, 'Copy 2');
       
-      // Show completion message after both windows are processed
       setTimeout(() => {
         notify.success("📄📄 Both receipt copies have been sent to printer!", {
           duration: 3000
         });
       }, 2000);
-    }, 300); // Small delay between windows
+    }, 300);
   };
 
-  // MODIFIED: Minimal print window function
+  // Minimal print window function
   const openSinglePrintWindow = (receiptData, copyLabel) => {
     const receiptHTML = generateReceiptHTML(receiptData, copyLabel);
     
-    // Make window as small as possible and position in top-left
     const printWindow = window.open('', '_blank', 'width=1,height=1,left=0,top=0,scrollbars=no,menubar=no,toolbar=no,location=no,status=no,resizable=no');
     
     if (!printWindow) {
@@ -385,11 +434,11 @@ const CheckoutPanel = ({ ticketCounts, types, onCheckout, onClear, mode = "new",
               font-size: 10pt; 
               background: white; 
               color: black; 
-              visibility: hidden; /* Hide content from user */
+              visibility: hidden;
             }
             @media print {
               body { 
-                visibility: visible; /* Show only when printing */
+                visibility: visible;
               }
             }
           </style>
@@ -399,38 +448,29 @@ const CheckoutPanel = ({ ticketCounts, types, onCheckout, onClear, mode = "new",
           <script>
             let hasPrinted = false;
             
-            // Minimize window immediately
             window.onload = function() {
               if (!hasPrinted) {
                 hasPrinted = true;
-                
-                // Move to top-left corner and minimize
                 window.moveTo(0, 0);
                 window.resizeTo(1, 1);
-                
-                // Focus and print immediately
                 window.focus();
                 
-                // Trigger print dialog immediately without delay
                 setTimeout(function() {
                   window.print();
                 }, 100);
                 
-                // Auto-close quickly after printing
                 setTimeout(function() { 
                   if (!window.closed) {
                     window.close(); 
                   }
-                }, 2000); // Reduced time
+                }, 2000);
               }
             };
             
-            // Handle print dialog completion - close immediately
             window.onafterprint = function() {
               window.close();
             };
             
-            // Handle if user cancels print dialog
             window.onfocus = function() {
               setTimeout(function() {
                 if (!window.closed) {
@@ -439,30 +479,30 @@ const CheckoutPanel = ({ ticketCounts, types, onCheckout, onClear, mode = "new",
               }, 1000);
             };
             
-            // Failsafe: Force close after 5 seconds
             setTimeout(function() {
               if (!window.closed) {
                 window.close();
               }
-            }, 5000); // Reduced timeout
+            }, 5000);
           </script>
         </body>
       </html>
     `);
     
     printWindow.document.close();
-    
     notify.info(`📄 ${copyLabel} print dialog opening...`, { duration: 1000 });
-    
     return printWindow;
   };
 
-  // REMOVE these old functions (they're causing the extra prints):
-  // - startPrintSequence
-  // - openPrintWindow (the old callback-based one)
+  // MODIFIED: Build receipt data with simple change calculation
+  const buildReceiptData = (actualTotalPaid = null) => {
+    // Use passed totalPaid or calculate from current state
+    const totalPaid = actualTotalPaid || selectedMethods
+      .filter(method => method !== 'discount')
+      .reduce((sum, method) => sum + getAmount(method), 0);
+      
+    const changeAmount = totalPaid > finalTotal ? totalPaid - finalTotal : 0;
 
-  // Add this new function to build receipt data:
-  const buildReceiptData = () => {
     return {
       header: {
         title: 'AKOYA WATER PARK',
@@ -470,7 +510,7 @@ const CheckoutPanel = ({ ticketCounts, types, onCheckout, onClear, mode = "new",
         cashier: cashierName,
         orderId: `#${new Date().getTime().toString().slice(-6)}`
       },
-      description: description.trim(), // Add this line
+      description: description.trim(),
       items: {
         tickets: selected.map(t => ({
           name: `${t.category} - ${t.subcategory}`,
@@ -492,18 +532,20 @@ const CheckoutPanel = ({ ticketCounts, types, onCheckout, onClear, mode = "new",
         ticketTotal,
         mealTotal,
         discountAmount,
-        finalTotal
+        finalTotal,
+        totalPaid, // Actual amount paid by customer
+        changeAmount // Change amount for display
       },
       payments: selectedMethods
         .filter(method => method !== 'discount' && getAmount(method) > 0)
         .map(method => ({
           method: getPaymentMethodDisplayName(method),
-          amount: getAmount(method)
+          amount: getAmount(method) // Show actual amounts paid on receipt
         }))
     };
   };
 
-  // Add this helper function for payment method display names:
+  // Helper function for payment method display names
   const getPaymentMethodDisplayName = (method) => {
     switch(method) {
       case 'vodafone_cash': return 'VODAFONE CASH';
@@ -511,30 +553,25 @@ const CheckoutPanel = ({ ticketCounts, types, onCheckout, onClear, mode = "new",
     }
   };
 
-  // 1. Add this validateDiscount function after your component constants
+  // Validate discount function
   const validateDiscount = (value) => {
-    // Convert input to number, default to 0 if empty/invalid
     const inputValue = value === '' ? 0 : Number(value);
-    
-    // Ensure discount doesn't exceed the subtotal
     const subtotal = ticketTotal + mealTotal;
     const validDiscount = Math.min(Math.max(0, inputValue), subtotal);
-    
     return validDiscount;
   };
 
-  // Add the renderPaymentField function here (BEFORE the return statement):
+  // MODIFIED: renderPaymentField function - only allow overpayment for cash
   const renderPaymentField = (method) => {
-    // Single payment method (excluding discount) shows the final total
     const isOnlyPaymentMethod = selectedMethods.filter(m => m !== 'discount').length === 1;
-    // Get the current amount for this method
     const currentAmount = getAmount(method);
-    // Format display value - show empty string instead of 0
-    const displayValue = isOnlyPaymentMethod 
-      ? finalTotal.toFixed(2) 
-      : (currentAmount === 0 ? "" : currentAmount.toString());
+    const isCashMethod = method === 'cash';
     
-    // Since the method name is now the display name, use it directly
+    // Only cash can exceed the total
+    const maxAmount = isCashMethod ? undefined : finalTotal;
+    const displayValue = currentAmount === 0 && !isOnlyPaymentMethod ? "" : currentAmount.toString();
+    const placeholderValue = isOnlyPaymentMethod ? `${finalTotal.toFixed(2)}${isCashMethod ? ' (or more)' : ''}` : "";
+    
     const getMethodLabel = (method) => {
       switch(method) {
         case 'vodafone_cash': return 'VODAFONE CASH';
@@ -547,20 +584,33 @@ const CheckoutPanel = ({ ticketCounts, types, onCheckout, onClear, mode = "new",
         key={method}
         label={getMethodLabel(method)}
         type="number"
-        inputProps={{ step: "any", min: 0 }}
-        value={displayValue}
-        onChange={(e) => {
-          // Parse the value, default to empty string if input is cleared
-          const inputValue = e.target.value === '' ? '' : Number(e.target.value);
-          setAmount(method, inputValue === '' ? 0 : inputValue);
+        inputProps={{ 
+          step: "any", 
+          min: 0,
+          max: maxAmount // Only restrict non-cash methods
         }}
-        disabled={isOnlyPaymentMethod}
+        value={displayValue}
+        placeholder={placeholderValue}
+        onChange={(e) => {
+          const inputValue = e.target.value === '' ? 0 : Number(e.target.value);
+          const validValue = Math.max(0, inputValue);
+          
+          // For non-cash methods, limit to final total
+          if (!isCashMethod && validValue > finalTotal) {
+            setAmount(method, finalTotal);
+          } else {
+            setAmount(method, validValue);
+          }
+        }}
+        disabled={false}
         fullWidth
         sx={{ flexBasis: "calc(50% - 8px)", flexGrow: 1, mb: 1 }}
+        helperText={isCashMethod && isOnlyPaymentMethod ? "Cash can exceed total for change" : ""}
       />
     );
   };
 
+  // MODIFIED: generateReceiptHTML with simple paid/change format
   const generateReceiptHTML = (data, copyLabel = '') => {
     return `
       <div style="width: 74mm; font-family: 'Courier New', monospace; font-size: 11pt; line-height: 1.3; font-weight: bold;">
@@ -625,6 +675,17 @@ const CheckoutPanel = ({ ticketCounts, types, onCheckout, onClear, mode = "new",
             <span style="font-weight: bold;">${payment.method}:</span><span style="font-weight: 900;">EGP ${payment.amount.toFixed(2)}</span>
           </div>
         `).join('') : ''}
+        
+        ${data.totals.totalPaid > data.totals.finalTotal ? `
+          <div style="margin: 2mm 0; font-size: 11pt; font-weight: bold;">
+            <div style="display: flex; justify-content: space-between; padding: 1mm; background: #f0f0f0;">
+              <span>Paid:</span><span>EGP ${data.totals.totalPaid.toFixed(2)}</span>
+            </div>
+            <div style="display: flex; justify-content: space-between; padding: 1mm; background: #ffe6e6; color: #d32f2f;">
+              <span>Change:</span><span>EGP ${data.totals.changeAmount.toFixed(2)}</span>
+            </div>
+          </div>
+        ` : ''}
         
         <div style="border-top: 2px dashed black; margin: 3mm 0;"></div>
         
@@ -818,7 +879,6 @@ const CheckoutPanel = ({ ticketCounts, types, onCheckout, onClear, mode = "new",
             color="primary"
             sx={{ mt: 1, display: "flex", flexWrap: "wrap" }}
           >
-            {/* Visa Bank - Using actual enum value */}
             <ToggleButton 
               value="الاهلي و مصر" 
               aria-label="visa_bank"
@@ -827,7 +887,6 @@ const CheckoutPanel = ({ ticketCounts, types, onCheckout, onClear, mode = "new",
               الاهلي و مصر
             </ToggleButton>
             
-            {/* Visa Other - Using actual enum value */}
             <ToggleButton 
               value="OTHER" 
               aria-label="visa_other"
@@ -836,7 +895,6 @@ const CheckoutPanel = ({ ticketCounts, types, onCheckout, onClear, mode = "new",
               OTHER
             </ToggleButton>
             
-            {/* Keep existing payment methods */}
             <ToggleButton 
               value="cash" 
               aria-label="cash"
@@ -900,11 +958,11 @@ const CheckoutPanel = ({ ticketCounts, types, onCheckout, onClear, mode = "new",
 
           <Typography 
             sx={{ mt: 2 }} 
-            color={Math.abs(remaining) < 0.01 ? "green" : "red"}
+            color={Math.abs(remaining) < 0.01 ? "green" : remaining > 0 ? "red" : "orange"}
             variant="subtitle1"
             fontWeight="bold"
           >
-            {remaining > 0.01 ? 'Remaining:' : remaining < -0.01 ? 'Overpaid:' : 'Payment Complete:'} EGP {Math.abs(remaining).toFixed(2)}
+            {remaining > 0.01 ? 'Remaining:' : remaining < -0.01 ? 'Overpaid (Change):' : 'Payment Complete:'} EGP {Math.abs(remaining).toFixed(2)}
           </Typography>
         </DialogContent>
         <DialogActions sx={{ px: 3, pb: 2 }}>
@@ -912,10 +970,10 @@ const CheckoutPanel = ({ ticketCounts, types, onCheckout, onClear, mode = "new",
           <Button
             onClick={handleConfirm}
             variant="contained"
-            disabled={!hasItems || (remaining > 0.01)}
+            disabled={!hasItems || remaining > 0.01}
             sx={{ bgcolor: "#00AEEF" }}
           >
-            Confirm
+            {remaining < -0.01 ? 'Confirm with Change' : 'Confirm'}
           </Button>
         </DialogActions>
       </Dialog>
