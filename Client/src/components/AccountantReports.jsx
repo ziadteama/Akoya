@@ -980,7 +980,7 @@ const AccountantReports = () => {
       ? `Orders Report from ${formatDisplayDate(fromDate)} to ${formatDisplayDate(toDate)}`
       : `Orders Report for ${formatDisplayDate(selectedDate)}`;
 
-    // NEW: Calculate cashier breakdown
+    // Calculate cashier breakdown
     const cashierBreakdown = {};
     reportData.forEach(order => {
       const cashierName = order.user_name || 'Unknown Cashier';
@@ -995,27 +995,21 @@ const AccountantReports = () => {
         };
       }
       
-      // Count orders
       cashierBreakdown[cashierName].ordersCount += 1;
-      
-      // Add revenue
       cashierBreakdown[cashierName].totalRevenue += parseFloat(order.total_amount || 0);
       
-      // Count tickets
       if (order.tickets && order.tickets.length > 0) {
         order.tickets.forEach(ticket => {
           cashierBreakdown[cashierName].totalTickets += (ticket.quantity || 1);
         });
       }
       
-      // Count meals
       if (order.meals && order.meals.length > 0) {
         order.meals.forEach(meal => {
           cashierBreakdown[cashierName].totalMeals += (meal.quantity || 1);
         });
       }
       
-      // Count discounts
       if (order.payments && order.payments.length > 0) {
         order.payments.forEach(payment => {
           if (payment.method === 'discount') {
@@ -1025,7 +1019,7 @@ const AccountantReports = () => {
       }
     });
 
-    // Calculate breakdowns (existing code)
+    // Calculate breakdowns
     const ticketsByCategory = {};
     reportData.forEach(order => {
       if (order.tickets && order.tickets.length > 0) {
@@ -1075,6 +1069,9 @@ const AccountantReports = () => {
         });
       }
     });
+
+    // NEW: Calculate total payments sum
+    const totalPaymentsSum = Object.values(paymentsByMethod).reduce((sum, amount) => sum + amount, 0);
 
     // Create HTML content for printing
     const printContent = `
@@ -1154,6 +1151,12 @@ const AccountantReports = () => {
             .cashier-row:hover {
               background-color: #f0f8ff;
             }
+            .total-payments-row {
+              background-color: #e8f4fd;
+              border: 2px solid #00AEEF;
+              font-weight: bold;
+              font-size: 14px;
+            }
             .arabic { 
               direction: rtl; 
               text-align: right; 
@@ -1188,7 +1191,7 @@ const AccountantReports = () => {
             </div>
           </div>
 
-          <!-- NEW: Cashier Performance Section -->
+          <!-- Cashier Performance Section -->
           <div class="cashier-section">
             <div class="cashier-title">👤 CASHIER PERFORMANCE BREAKDOWN</div>
             <table>
@@ -1298,6 +1301,13 @@ const AccountantReports = () => {
                   </tr>
                 `).join('')}
               </tbody>
+              <!-- NEW: Total Payments Row -->
+              <tfoot>
+                <tr class="total-payments-row">
+                  <td class="arabic" style="font-weight: bold; color: #00AEEF;">💳 TOTAL PAYMENTS</td>
+                  <td style="font-weight: bold; font-size: 16px; color: #00AEEF;">EGP ${totalPaymentsSum.toFixed(2)}</td>
+                </tr>
+              </tfoot>
             </table>
           </div>
         </body>
