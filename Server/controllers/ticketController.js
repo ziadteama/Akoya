@@ -930,3 +930,58 @@ export const getTicketsReportByDateRange = async (req, res) => {
   }
 };
 
+// NEW: Rename category endpoint
+export const renameCategoryName = async (req, res) => {
+  try {
+    const { oldCategoryName, newCategoryName } = req.body;
+
+    if (!oldCategoryName || !newCategoryName) {
+      return res.status(400).json({
+        message: "Both old and new category names are required"
+      });
+    }
+
+    if (oldCategoryName.trim() === newCategoryName.trim()) {
+      return res.status(400).json({
+        message: "New category name must be different from the current name"
+      });
+    }
+
+    // Check if new category name already exists
+    const existingCategory = await pool.query(
+      "SELECT id FROM ticket_types WHERE LOWER(category) = LOWER($1) LIMIT 1",
+      [newCategoryName.trim()]
+    );
+
+    if (existingCategory.rows.length > 0) {
+      return res.status(400).json({
+        message: "A category with this name already exists"
+      });
+    }
+
+    // Update all ticket types with the old category name
+    const result = await pool.query(
+      `UPDATE ticket_types 
+       SET category = $1 
+       WHERE category = $2 
+       RETURNING *`,
+      [newCategoryName.trim(), oldCategoryName]
+    );
+
+    if (result.rows.length === 0) {
+      return res.status(404).json({
+        message: "Category not found"
+      });
+    }
+
+    res.json({
+      message: `Category renamed from "${oldCategoryName}" to "${newCategoryName}" successfully`,
+      updatedTicketTypes: result.rows
+    });
+
+  } catch (error) {
+    console.error("Error renaming category:", error);
+    res.status(500).json({ message: "Server error" });
+  }
+};
+

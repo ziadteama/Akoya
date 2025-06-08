@@ -15,7 +15,8 @@ import {
   updateTicketTypeArchiveStatus,
   assignTicketTypesById,
   getTicketsReportByDate,
-  getTicketsReportByDateRange
+  getTicketsReportByDateRange,
+  renameCategoryName
 } from "../controllers/ticketController.js";
 
 const router = express.Router();
@@ -93,6 +94,8 @@ router.put("/refund", refundTickets);
 router.patch("/archive-category", updateTicketTypeArchiveStatus);
 
 router.patch("/tickets/assign-types", assignTicketTypesById);
+
+router.patch('/rename-category', renameCategoryName);
 
 router.get('/tickets-report', getTicketsReportByDate);
 router.get('/tickets-report-range', getTicketsReportByDateRange);
