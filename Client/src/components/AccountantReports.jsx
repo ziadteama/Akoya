@@ -248,7 +248,7 @@ const AccountantReports = () => {
       return str;
     };
 
-    // Payment method mapping function
+    // Payment method mapping function (same as before)
     const mapPaymentMethod = (method) => {
       const methodMappings = {
         'postponed': 'آجل',
@@ -268,33 +268,27 @@ const AccountantReports = () => {
       
       const normalizedMethod = (method || '').toString().toLowerCase().trim();
       
-      // Check for exact matches first
       if (methodMappings[normalizedMethod]) {
         return methodMappings[normalizedMethod];
       }
       
-      // Check if it contains الاهلي or مصر
       if (normalizedMethod.includes('الاهلي') || normalizedMethod.includes('مصر')) {
         return 'بنك الاهلي و مصر';
       }
       
-      // Check if it's postponed in different forms
       if (normalizedMethod.includes('postponed') || normalizedMethod.includes('آجل')) {
         return 'آجل';
       }
       
-      // Check if it's cash in different forms
       if (normalizedMethod.includes('cash') || normalizedMethod.includes('نقد')) {
         return 'نقدي';
       }
       
-      // Default to "بنوك اخرى" for any other bank-like payment
       if (normalizedMethod.includes('bank') || normalizedMethod.includes('بنك') || 
           normalizedMethod.includes('card') || normalizedMethod.includes('بطاقة')) {
         return 'بنوك اخرى';
       }
       
-      // Return original if no mapping found
       return method || 'غير محدد';
     };
 
@@ -309,7 +303,56 @@ const AccountantReports = () => {
     csvContent += `Total Discounts (EGP),${(summary.totalDiscounts || 0).toFixed(2)}\r\n`;
     csvContent += `Total Tickets,${summary.totalTickets}\r\n`;
 
-    // Get total tickets by category
+    // NEW: Add cashier breakdown to CSV
+    const cashierBreakdown = {};
+    reportData.forEach(order => {
+      const cashierName = order.user_name || 'Unknown Cashier';
+      
+      if (!cashierBreakdown[cashierName]) {
+        cashierBreakdown[cashierName] = {
+          ordersCount: 0,
+          totalRevenue: 0,
+          totalTickets: 0,
+          totalMeals: 0,
+          totalDiscounts: 0
+        };
+      }
+      
+      cashierBreakdown[cashierName].ordersCount += 1;
+      cashierBreakdown[cashierName].totalRevenue += parseFloat(order.total_amount || 0);
+      
+      if (order.tickets && order.tickets.length > 0) {
+        order.tickets.forEach(ticket => {
+          cashierBreakdown[cashierName].totalTickets += (ticket.quantity || 1);
+        });
+      }
+      
+      if (order.meals && order.meals.length > 0) {
+        order.meals.forEach(meal => {
+          cashierBreakdown[cashierName].totalMeals += (meal.quantity || 1);
+        });
+      }
+      
+      if (order.payments && order.payments.length > 0) {
+        order.payments.forEach(payment => {
+          if (payment.method === 'discount') {
+            cashierBreakdown[cashierName].totalDiscounts += parseFloat(payment.amount || 0);
+          }
+        });
+      }
+    });
+
+    csvContent += `\r\nCASHIER PERFORMANCE BREAKDOWN\r\n`;
+    csvContent += `Cashier Name,Orders Count,Tickets Sold,Meals Sold,Revenue (EGP),Discounts Applied (EGP),% of Total Revenue\r\n`;
+    
+    Object.entries(cashierBreakdown)
+      .sort(([,a], [,b]) => b.totalRevenue - a.totalRevenue)
+      .forEach(([cashierName, data]) => {
+        const revenuePercentage = ((data.totalRevenue / summary.totalRevenue) * 100).toFixed(1);
+        csvContent += `${escapeCSV(cashierName)},${data.ordersCount},${data.totalTickets},${data.totalMeals},${data.totalRevenue.toFixed(2)},${data.totalDiscounts.toFixed(2)},${revenuePercentage}%\r\n`;
+      });
+
+    // Add existing breakdown sections (tickets, meals, payments)
     const ticketsByCategory = {};
     reportData.forEach(order => {
       if (order.tickets && order.tickets.length > 0) {
@@ -380,7 +423,6 @@ const AccountantReports = () => {
       }
     });
 
-    // Calculate total payments (including discounts)
     const totalPayments = Object.values(paymentsByMethod).reduce((sum, amount) => sum + amount, 0);
 
     csvContent += `\r\nPAYMENT METHOD BREAKDOWN\r\n`;
@@ -398,7 +440,7 @@ const AccountantReports = () => {
 
     const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" });
     saveAs(blob, filename);
-    notify.success("Orders CSV exported successfully!");
+    notify.success("Orders CSV with cashier breakdown exported successfully!");
   };
 
   const exportTicketsCSV = () => {
@@ -938,7 +980,52 @@ const AccountantReports = () => {
       ? `Orders Report from ${formatDisplayDate(fromDate)} to ${formatDisplayDate(toDate)}`
       : `Orders Report for ${formatDisplayDate(selectedDate)}`;
 
-    // Calculate breakdowns
+    // NEW: Calculate cashier breakdown
+    const cashierBreakdown = {};
+    reportData.forEach(order => {
+      const cashierName = order.user_name || 'Unknown Cashier';
+      
+      if (!cashierBreakdown[cashierName]) {
+        cashierBreakdown[cashierName] = {
+          ordersCount: 0,
+          totalRevenue: 0,
+          totalTickets: 0,
+          totalMeals: 0,
+          totalDiscounts: 0
+        };
+      }
+      
+      // Count orders
+      cashierBreakdown[cashierName].ordersCount += 1;
+      
+      // Add revenue
+      cashierBreakdown[cashierName].totalRevenue += parseFloat(order.total_amount || 0);
+      
+      // Count tickets
+      if (order.tickets && order.tickets.length > 0) {
+        order.tickets.forEach(ticket => {
+          cashierBreakdown[cashierName].totalTickets += (ticket.quantity || 1);
+        });
+      }
+      
+      // Count meals
+      if (order.meals && order.meals.length > 0) {
+        order.meals.forEach(meal => {
+          cashierBreakdown[cashierName].totalMeals += (meal.quantity || 1);
+        });
+      }
+      
+      // Count discounts
+      if (order.payments && order.payments.length > 0) {
+        order.payments.forEach(payment => {
+          if (payment.method === 'discount') {
+            cashierBreakdown[cashierName].totalDiscounts += parseFloat(payment.amount || 0);
+          }
+        });
+      }
+    });
+
+    // Calculate breakdowns (existing code)
     const ticketsByCategory = {};
     reportData.forEach(order => {
       if (order.tickets && order.tickets.length > 0) {
@@ -1045,6 +1132,28 @@ const AccountantReports = () => {
               border-radius: 5px;
               border-left: 4px solid #00AEEF;
             }
+            .cashier-section {
+              background-color: #e8f4fd;
+              padding: 15px;
+              border-radius: 8px;
+              border: 2px solid #00AEEF;
+              margin-bottom: 20px;
+            }
+            .cashier-title {
+              font-size: 18px;
+              font-weight: bold;
+              color: #00AEEF;
+              margin-bottom: 15px;
+              text-align: center;
+            }
+            .cashier-row {
+              background-color: white;
+              border-radius: 4px;
+              margin-bottom: 8px;
+            }
+            .cashier-row:hover {
+              background-color: #f0f8ff;
+            }
             .arabic { 
               direction: rtl; 
               text-align: right; 
@@ -1077,6 +1186,53 @@ const AccountantReports = () => {
                 <strong>💸 Total Discounts:</strong> EGP ${(summary.totalDiscounts || 0).toFixed(2)}
               </div>
             </div>
+          </div>
+
+          <!-- NEW: Cashier Performance Section -->
+          <div class="cashier-section">
+            <div class="cashier-title">👤 CASHIER PERFORMANCE BREAKDOWN</div>
+            <table>
+              <thead>
+                <tr style="background-color: #00AEEF; color: white;">
+                  <th>Cashier Name</th>
+                  <th>Orders</th>
+                  <th>Tickets Sold</th>
+                  <th>Meals Sold</th>
+                  <th>Revenue (EGP)</th>
+                  <th>Discounts Applied (EGP)</th>
+                  <th>% of Total Revenue</th>
+                </tr>
+              </thead>
+              <tbody>
+                ${Object.entries(cashierBreakdown)
+                  .sort(([,a], [,b]) => b.totalRevenue - a.totalRevenue)
+                  .map(([cashierName, data]) => {
+                    const revenuePercentage = ((data.totalRevenue / summary.totalRevenue) * 100).toFixed(1);
+                    return `
+                      <tr class="cashier-row">
+                        <td style="font-weight: bold; color: #00AEEF;">${cashierName}</td>
+                        <td style="text-align: center;">${data.ordersCount}</td>
+                        <td style="text-align: center;">${data.totalTickets}</td>
+                        <td style="text-align: center;">${data.totalMeals}</td>
+                        <td style="text-align: right; font-weight: bold;">EGP ${data.totalRevenue.toFixed(2)}</td>
+                        <td style="text-align: right; color: #d32f2f;">EGP ${data.totalDiscounts.toFixed(2)}</td>
+                        <td style="text-align: center; font-weight: bold; color: #00AEEF;">${revenuePercentage}%</td>
+                      </tr>
+                    `;
+                  }).join('')}
+              </tbody>
+              <tfoot>
+                <tr style="background-color: #f0f8ff; font-weight: bold; border-top: 3px solid #00AEEF;">
+                  <td>TOTAL</td>
+                  <td style="text-align: center;">${reportData.length}</td>
+                  <td style="text-align: center;">${summary.totalTickets}</td>
+                  <td style="text-align: center;">${Object.values(cashierBreakdown).reduce((sum, data) => sum + data.totalMeals, 0)}</td>
+                  <td style="text-align: right;">EGP ${summary.totalRevenue.toFixed(2)}</td>
+                  <td style="text-align: right;">EGP ${(summary.totalDiscounts || 0).toFixed(2)}</td>
+                  <td style="text-align: center;">100%</td>
+                </tr>
+              </tfoot>
+            </table>
           </div>
 
           <div class="section">
@@ -1156,7 +1312,7 @@ const AccountantReports = () => {
     printWindow.print();
     printWindow.close();
 
-    notify.success("Orders report prepared for printing!");
+    notify.success("Orders report with cashier breakdown prepared for printing!");
   };
 
   // New print function for tickets
