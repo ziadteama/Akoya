@@ -12,7 +12,8 @@ import AccountantReports from "./components/AccountantReports";
 import AccountantScan from "./components/AccountantScan";
 import AccountantCategories from "./components/AccountantCategories";
 import AccountantMeals from "./components/AccountantMeals";
-import AccountantSelling from "./components/AccountantSelling"; // Add this import
+import AccountantSelling from "./components/AccountantSelling";
+import CreditManagement from "./components/CreditManagement"; // UPDATED: Import as component
 import UserRegistration from "./components/UserRegistration";
 import { ToastContainer } from 'react-toastify';
 import 'react-toastify/dist/ReactToastify.css';
@@ -32,7 +33,8 @@ function App() {
             <Route path="accountant-scan" element={<AccountantScan />} />
             <Route path="accountant-categories" element={<AccountantCategories />} />
             <Route path="accountant-meals" element={<AccountantMeals/>} />
-            <Route path="sell-tickets" element={<AccountantSelling />} /> {/* Add this route */}
+            <Route path="sell-tickets" element={<AccountantSelling />} />
+            <Route path="credit-management" element={<CreditManagement />} /> {/* Credit management component */}
             <Route path="register-user" element={<UserRegistration />} />
           </Route>
 

@@ -5,6 +5,7 @@ import ticketRoutes from './routes/ticketRoutes.js';
 import mealRoutes from './routes/mealRoutes.js';
 import orderRoutes from "./routes/ordersRoutes.js";
 import userRoutes from './routes/userRoutes.js';
+import creditRoutes from './routes/creditRoutes.js';
 
 dotenv.config();
 
@@ -50,6 +51,7 @@ app.use('/api/tickets', ticketRoutes);
 app.use('/api/meals', mealRoutes);
 app.use('/api/orders', orderRoutes);
 app.use('/api/users', userRoutes);
+app.use('/api/credits', creditRoutes);
 
 // Listen only on localhost for local development
 app.listen(PORT, 'localhost', () => {

@@ -1,4 +1,5 @@
 import pool from "../db.js";
+import { processTicketSaleCredit } from './creditController.js';
 
 
 export const getAllTickets = async (req, res) => {
@@ -35,174 +36,191 @@ export const getAllTicketTypes = async (req, res) => {
 
 
 export const sellTickets = async (req, res) => {
+  const client = await pool.connect();
+  
   try {
-    const { tickets = [], user_id, description, payments, meals = [] } = req.body;
+    await client.query('BEGIN');
+    
+    const { tickets = [], user_id, description, payments = [], meals = [] } = req.body;
 
-    if (!user_id) {
-      return res.status(400).json({ message: "Missing user ID" });
+    // Validate and categorize tickets
+    let grossTotal = 0;
+    const validTickets = [];
+    let creditCategories = new Set();
+    let nonCreditCategories = new Set();
+
+    for (const ticket of tickets) {
+      // Get ticket type with credit account info
+      const { rows } = await client.query(
+        `SELECT 
+           tt.*,
+           cca.credit_account_id,
+           ca.name as credit_account_name,
+           ca.balance as credit_balance
+         FROM ticket_types tt
+         LEFT JOIN category_credit_accounts cca ON tt.category = cca.category_name
+         LEFT JOIN credit_accounts ca ON cca.credit_account_id = ca.id
+         WHERE tt.id = $1`,
+        [ticket.ticket_type_id]
+      );
+      
+      if (rows.length === 0) {
+        throw new Error(`Invalid ticket type ID: ${ticket.ticket_type_id}`);
+      }
+      
+      const ticketType = rows[0];
+      const ticketTotal = ticketType.price * ticket.quantity;
+      grossTotal += ticketTotal;
+      
+      const ticketData = {
+        ...ticket,
+        price: ticketType.price,
+        category: ticketType.category,
+        subcategory: ticketType.subcategory,
+        total: ticketTotal,
+        is_credit_enabled: !!ticketType.credit_account_id,
+        credit_account_id: ticketType.credit_account_id,
+        credit_account_name: ticketType.credit_account_name,
+        credit_balance: ticketType.credit_balance
+      };
+
+      validTickets.push(ticketData);
+
+      // Track credit vs non-credit categories
+      if (ticketData.is_credit_enabled) {
+        creditCategories.add(ticketData.category);
+      } else {
+        nonCreditCategories.add(ticketData.category);
+      }
     }
 
-    if (!Array.isArray(payments) || payments.length === 0) {
-      return res.status(400).json({ message: "Missing payments" });
-    }
-
-    const round = (num) => Math.round(num * 100) / 100;
-
-    // 🎟 Tickets
-    let validTickets = [];
-    let ticketTotal = 0;
-    if (Array.isArray(tickets) && tickets.length > 0) {
-      const ticketTypeIds = tickets.map((t) => t.ticket_type_id);
-      const ticketQuery = `SELECT id, price FROM ticket_types WHERE id = ANY($1)`;
-      const { rows: ticketRows } = await pool.query(ticketQuery, [ticketTypeIds]);
-      const ticketPriceMap = new Map(ticketRows.map((row) => [row.id, parseFloat(row.price)]));
-
-      validTickets = tickets
-        .filter(({ ticket_type_id, quantity }) => ticketPriceMap.has(ticket_type_id) && quantity > 0)
-        .flatMap(({ ticket_type_id, quantity }) =>
-          Array(quantity).fill([
-            ticket_type_id,
-            "sold",
-            true,
-            new Date(),
-            ticketPriceMap.get(ticket_type_id),
-          ])
-        );
-
-      ticketTotal = round(validTickets.reduce((sum, row) => sum + Number(row[4]), 0));
-    }
-
-    // 🍽️ Meals
-    let validMeals = [];
-    let mealTotal = 0;
-    if (Array.isArray(meals) && meals.length > 0) {
-      const mealIds = meals.map((m) => m.meal_id);
-      const mealQuery = `SELECT id, price FROM meals WHERE id = ANY($1)`;
-      const { rows: mealRows } = await pool.query(mealQuery, [mealIds]);
-      const mealPriceMap = new Map(mealRows.map((row) => [row.id, parseFloat(row.price)]));
-
-      validMeals = meals
-        .filter(({ meal_id, quantity }) => mealPriceMap.has(meal_id) && quantity > 0)
-        .map(({ meal_id, quantity }) => ({
-          meal_id,
-          quantity,
-          price: mealPriceMap.get(meal_id),
-        }));
-
-      mealTotal = round(validMeals.reduce((sum, m) => sum + m.quantity * m.price, 0));
-    }
-
-    if (validTickets.length === 0 && validMeals.length === 0) {
-      return res.status(400).json({ message: "No valid tickets or meals to sell" });
-    }
-
-    // First calculation of discount amount - keep this one
-    const grossTotal = round(ticketTotal + mealTotal);
-    const discountAmount = round(
-      payments.find((p) => p.method === "discount")?.amount || 0
-    );
-    const finalTotal = round(grossTotal - discountAmount);
-
-    // 💳 Validate payments (excluding discount)
-    const paidAmount = round(
-      payments
-        .filter((p) => p.method !== "discount")
-        .reduce((sum, p) => sum + Number(p.amount), 0)
-    );
-
-    if (paidAmount !== finalTotal) {
-      return res.status(400).json({
-        message: `Paid amount (${paidAmount}) must match final total (${finalTotal})`,
+    // Check for mixed credit/non-credit categories (not allowed)
+    if (creditCategories.size > 0 && nonCreditCategories.size > 0) {
+      await client.query('ROLLBACK');
+      return res.status(400).json({ 
+        error: "Cannot mix credit-enabled and cash-only tickets in the same order",
+        type: "MIXED_PAYMENT_ERROR",
+        creditCategories: Array.from(creditCategories),
+        nonCreditCategories: Array.from(nonCreditCategories)
       });
     }
 
-    // 🧾 Insert order with default total (will be updated by trigger)
-    const orderInsertQuery = `
-      INSERT INTO orders (user_id, description)
-      VALUES ($1, $2)
-      RETURNING id;
-    `;
-    const { rows: orderRows } = await pool.query(orderInsertQuery, [
-      user_id,
-      description || null,
-    ]);
-    const order_id = orderRows[0].id;
+    // Create order
+    const orderResult = await client.query(
+      `INSERT INTO orders (user_id, description, gross_total, total_amount, created_at)
+       VALUES ($1, $2, $3, $3, CURRENT_TIMESTAMP)
+       RETURNING id`,
+      [user_id, description || (creditCategories.size > 0 ? 'Credit sale' : 'Cash sale'), grossTotal]
+    );
+    
+    const orderId = orderResult.rows[0].id;
 
-    // 🎟 Insert tickets
-    if (validTickets.length > 0) {
-      const ticketValues = validTickets.map((row) => [...row, order_id]);
-      const ticketInsertQuery = `
-        INSERT INTO tickets (ticket_type_id, status, valid, sold_at, sold_price, order_id)
-        SELECT * FROM UNNEST(
-          $1::int[], $2::text[], $3::boolean[], $4::timestamptz[], $5::numeric[], $6::int[]
-        )
-      `;
-      await pool.query(ticketInsertQuery, [
-        ticketValues.map((r) => r[0]),
-        ticketValues.map((r) => r[1]),
-        ticketValues.map((r) => r[2]),
-        ticketValues.map((r) => r[3]),
-        ticketValues.map((r) => r[4]),
-        ticketValues.map((r) => r[5]),
-      ]);
+    // Process credit-only or cash-only orders
+    if (creditCategories.size > 0) {
+      // CREDIT-ONLY ORDER
+      console.log('🏦 Processing credit-only order...');
+      
+      const creditResult = await processTicketSaleCredit(orderId, validTickets, client);
+      
+      // Insert tickets
+      await insertTicketsToDatabase(client, orderId, validTickets);
+      
+      // Insert meals if any
+      await insertMealsToDatabase(client, orderId, meals);
+
+      await client.query('COMMIT');
+
+      res.json({
+        message: "Credit sale completed successfully",
+        order_id: orderId,
+        total_amount: grossTotal,
+        payment_type: "CREDIT_ONLY",
+        credit_used: creditResult.totalCreditUsed,
+        credit_breakdown: creditResult.creditTransactions.map(ct => ({
+          account: ct.accountName,
+          amount: ct.creditUsed,
+          new_balance: ct.newBalance,
+          went_into_debt: ct.wentIntoDebt
+        }))
+      });
+
+    } else {
+      // CASH-ONLY ORDER
+      console.log('💵 Processing cash-only order...');
+      
+      // Validate cash payments
+      const totalPayments = payments.reduce((sum, p) => sum + parseFloat(p.amount), 0);
+      
+      if (Math.abs(totalPayments - grossTotal) > 0.01) {
+        await client.query('ROLLBACK');
+        return res.status(400).json({ 
+          error: `Payment mismatch. Expected: ${grossTotal.toFixed(2)}, Received: ${totalPayments.toFixed(2)}`
+        });
+      }
+
+      // Insert cash payments
+      for (const payment of payments) {
+        await client.query(
+          `INSERT INTO payments (order_id, method, amount, reference)
+           VALUES ($1, $2::payment_method, $3, $4)`,
+          [orderId, payment.method, payment.amount, payment.reference || null]
+        );
+      }
+
+      // Insert tickets
+      await insertTicketsToDatabase(client, orderId, validTickets);
+      
+      // Insert meals if any
+      await insertMealsToDatabase(client, orderId, meals);
+
+      await client.query('COMMIT');
+
+      res.json({
+        message: "Cash sale completed successfully",
+        order_id: orderId,
+        total_amount: grossTotal,
+        payment_type: "CASH_ONLY"
+      });
     }
 
-    // 🍽️ Insert meals
-    if (validMeals.length > 0) {
-      const mealInsertQuery = `
-        INSERT INTO order_meals (order_id, meal_id, quantity, price_at_order)
-        SELECT * FROM UNNEST($1::int[], $2::int[], $3::int[], $4::numeric[])
-      `;
-      await pool.query(mealInsertQuery, [
-        validMeals.map(() => order_id),
-        validMeals.map((m) => m.meal_id),
-        validMeals.map((m) => m.quantity),
-        validMeals.map((m) => m.price),
-      ]);
-    }
-
-    // 💵 Insert payments (including discount)
-    const paymentInsertQuery = `
-      INSERT INTO payments (order_id, method, amount)
-      SELECT * FROM UNNEST($1::int[], $2::payment_method[], $3::numeric[])
-    `;
-    await pool.query(paymentInsertQuery, [
-      payments.map(() => order_id),
-      payments.map((p) => p.method),
-      payments.map((p) => p.amount),
-    ]);
-
-    // Get the updated order with correctly calculated totals
-    const orderQuery = `
-      SELECT id, total_amount, gross_total
-      FROM orders
-      WHERE id = $1;
-    `;
-    const { rows: updatedOrder } = await pool.query(orderQuery, [order_id]);
-    
-    // CHANGE THIS LINE - Use a different variable name
-    // Instead of:
-    // const discountAmount = payments...
-    
-    // Use this:
-    const reportedDiscountAmount = payments
-      .filter(p => p.method === "discount")
-      .reduce((sum, p) => sum + Number(p.amount), 0);
-
-    res.json({
-      message: "Checkout completed with discount support",
-      order_id,
-      grossTotal: updatedOrder[0].gross_total,
-      discountAmount: reportedDiscountAmount, // Use the new variable name
-      finalTotal: updatedOrder[0].total_amount,
+  } catch (error) {
+    await client.query('ROLLBACK');
+    console.error("❌ sellTickets error:", error);
+    res.status(500).json({ 
+      error: "Failed to process sale",
+      details: error.message,
+      type: error.message.includes('Insufficient') ? 'INSUFFICIENT_CREDIT' : 'SALE_ERROR'
     });
-  } catch (err) {
-    console.error("❌ sellTickets error:", err);
-    res.status(500).json({ message: "Server error" });
+  } finally {
+    client.release();
   }
 };
 
-  export const getTicketsByDate = async (req, res) => {
+// Helper function to insert tickets
+async function insertTicketsToDatabase(client, orderId, tickets) {
+  for (const ticket of tickets) {
+    for (let i = 0; i < ticket.quantity; i++) {
+      await client.query(
+        `INSERT INTO tickets (ticket_type_id, status, order_id, sold_at, sold_price)
+         VALUES ($1, 'sold', $2, CURRENT_TIMESTAMP, $3)`,
+        [ticket.ticket_type_id, orderId, ticket.price]
+      );
+    }
+  }
+}
+
+// Helper function to insert meals
+async function insertMealsToDatabase(client, orderId, meals) {
+  for (const meal of meals) {
+    await client.query(
+      `INSERT INTO order_meals (order_id, meal_id, quantity, price_at_order)
+       VALUES ($1, $2, $3, $4)`,
+      [orderId, meal.id, meal.quantity, meal.price]
+    );
+  }
+}
+
+export const getTicketsByDate = async (req, res) => {
   try {
     const { date } = req.query;
 
@@ -982,6 +1000,53 @@ export const renameCategoryName = async (req, res) => {
   } catch (error) {
     console.error("Error renaming category:", error);
     res.status(500).json({ message: "Server error" });
+  }
+};
+
+// Add new endpoint to check if categories are credit-enabled
+export const checkCreditStatus = async (req, res) => {
+  try {
+    const { ticketTypeIds } = req.body;
+    
+    if (!Array.isArray(ticketTypeIds) || ticketTypeIds.length === 0) {
+      return res.status(400).json({ error: 'Ticket type IDs array is required' });
+    }
+    
+    const query = `
+      SELECT 
+        tt.id,
+        tt.category,
+        tt.subcategory,
+        tt.price,
+        CASE WHEN cca.credit_account_id IS NOT NULL THEN true ELSE false END as is_credit_enabled,
+        ca.name as credit_account_name,
+        ca.balance as credit_balance
+      FROM ticket_types tt
+      LEFT JOIN category_credit_accounts cca ON tt.category = cca.category_name
+      LEFT JOIN credit_accounts ca ON cca.credit_account_id = ca.id
+      WHERE tt.id = ANY($1)
+    `;
+    
+    const { rows } = await pool.query(query, [ticketTypeIds]);
+    
+    const creditEnabled = rows.filter(row => row.is_credit_enabled);
+    const cashOnly = rows.filter(row => !row.is_credit_enabled);
+    
+    res.json({
+      tickets: rows,
+      summary: {
+        total_tickets: rows.length,
+        credit_enabled: creditEnabled.length,
+        cash_only: cashOnly.length,
+        can_mix: false, // We don't allow mixing
+        payment_type: creditEnabled.length > 0 && cashOnly.length > 0 ? 'MIXED_ERROR' :
+                     creditEnabled.length > 0 ? 'CREDIT_ONLY' : 'CASH_ONLY'
+      }
+    });
+    
+  } catch (error) {
+    console.error('Error checking credit status:', error);
+    res.status(500).json({ error: 'Failed to check credit status' });
   }
 };
 

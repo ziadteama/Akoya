@@ -40,6 +40,8 @@ const CheckoutPanel = ({ ticketCounts, types, onCheckout, onClear, mode = "new",
   });
 
   const [cashierName, setCashierName] = useState('');
+  const [creditStatus, setCreditStatus] = useState(null);
+  const [isCheckingCredit, setIsCheckingCredit] = useState(false);
 
   const baseUrl = window.runtimeConfig?.apiBaseUrl;
 
@@ -162,39 +164,56 @@ const CheckoutPanel = ({ ticketCounts, types, onCheckout, onClear, mode = "new",
   // Check if there are any items
   const hasItems = selected.length > 0 || Object.values(mealCounts).some(qty => qty > 0);
 
-  // Set full amount if exactly one payment method is selected (excluding discount)
-  useEffect(() => {
-    const paymentMethods = selectedMethods.filter(m => m !== 'discount');
-    
-    if (paymentMethods.length === 1 && finalTotal > 0) {
-      const method = paymentMethods[0];
-      setAmounts(prev => ({
-        ...prev,
-        [method]: finalTotal
-      }));
-    }
-  }, [selectedMethods, finalTotal]);
+  // FIXED: Auto-payment amount logic with proper dependencies
+  const prevSelectedMethodsRef = useRef([]);
+  const prevFinalTotalRef = useRef(0);
 
-  // Reset payment amounts when multiple methods are selected
   useEffect(() => {
     const paymentMethods = selectedMethods.filter(m => m !== 'discount');
+    const prevPaymentMethods = prevSelectedMethodsRef.current.filter(m => m !== 'discount');
     
-    if (paymentMethods.length > 1) {
-      setAmounts(prev => {
-        const updated = { ...prev };
-        paymentMethods.forEach(method => {
-          updated[method] = 0;
-        });
-        return updated;
-      });
+    // Only update if methods or total actually changed
+    const methodsChanged = JSON.stringify(paymentMethods) !== JSON.stringify(prevPaymentMethods);
+    const totalChanged = Math.abs(finalTotal - prevFinalTotalRef.current) > 0.01;
+    
+    if (methodsChanged || totalChanged) {
+      if (paymentMethods.length === 1 && finalTotal > 0) {
+        const method = paymentMethods[0];
+        const currentAmount = amounts[method] || 0;
+        
+        // Only update if amount is significantly different
+        if (Math.abs(currentAmount - finalTotal) > 0.01) {
+          setAmounts(prev => ({
+            ...prev,
+            [method]: finalTotal
+          }));
+        }
+      } else if (paymentMethods.length > 1) {
+        // Reset amounts when multiple methods selected
+        const hasNonZeroAmounts = paymentMethods.some(method => (amounts[method] || 0) > 0);
+        
+        if (hasNonZeroAmounts) {
+          setAmounts(prev => {
+            const updated = { ...prev };
+            paymentMethods.forEach(method => {
+              updated[method] = 0;
+            });
+            return updated;
+          });
+        }
+      }
     }
-  }, [selectedMethods]);
+    
+    // Update refs
+    prevSelectedMethodsRef.current = [...selectedMethods];
+    prevFinalTotalRef.current = finalTotal;
+  }, [selectedMethods, finalTotal]); // Remove amounts from dependencies
 
   // Calculate entered total and remaining amount
   const enteredTotal = useMemo(() => {
     const paymentTotal = selectedMethods
       .filter(method => method !== 'discount')
-      .reduce((sum, method) => sum + getAmount(method), 0);
+      .reduce((sum, method) => sum + (amounts[method] || 0), 0);
     
     return paymentTotal;
   }, [selectedMethods, amounts]);
@@ -228,8 +247,138 @@ const CheckoutPanel = ({ ticketCounts, types, onCheckout, onClear, mode = "new",
     });
   };
 
+  // Check credit status when tickets change - FIXED VERSION
+  useEffect(() => {
+    const checkCreditStatus = async () => {
+      if (!baseUrl || mode === "existing") {
+        setCreditStatus(null);
+        return;
+      }
+      
+      // Create a stable ticket type IDs array for comparison
+      const ticketTypeIds = selected.map(t => t.id).sort();
+      
+      // If no tickets selected, clear credit status
+      if (ticketTypeIds.length === 0) {
+        setCreditStatus(null);
+        return;
+      }
+      
+      try {
+        setIsCheckingCredit(true);
+        
+        const { data } = await axios.post(`${baseUrl}/api/tickets/check-credit-status`, {
+          ticketTypeIds
+        });
+        
+        setCreditStatus(data);
+      } catch (error) {
+        console.error('Error checking credit status:', error);
+        setCreditStatus(null);
+      } finally {
+        setIsCheckingCredit(false);
+      }
+    };
+    
+    checkCreditStatus();
+  }, [baseUrl, mode, selected.length, selected.map(t => t.id).sort().join(',')]); // Use stable dependencies
+
   const handleSubmit = () => {
-    setOpen(true);
+    // Check if this is a credit-only order
+    if (creditStatus?.summary?.payment_type === 'CREDIT_ONLY') {
+      // Skip payment dialog for credit-only orders
+      handleCreditOnlyCheckout();
+    } else if (creditStatus?.summary?.payment_type === 'MIXED_ERROR') {
+      // Show error for mixed orders
+      notify.error('❌ Cannot mix credit-enabled and cash-only tickets in the same order. Please separate them.');
+      return;
+    } else {
+      // Normal cash/card checkout
+      setOpen(true);
+    }
+  };
+
+  // Add new function for credit-only checkout
+  const handleCreditOnlyCheckout = async () => {
+    try {
+      const user_id = parseInt(localStorage.getItem("userId"), 10);
+      if (!user_id || isNaN(user_id)) {
+        notify.error("Missing or invalid user ID");
+        return;
+      }
+
+      // Create payload for credit-only order (no payments array needed)
+      let payload = {
+        user_id,
+        description: description.trim() || `Credit sale - ${new Date().toLocaleString()}`,
+        tickets: selected.map((t) => ({
+          ticket_type_id: parseInt(t.id, 10),
+          quantity: parseInt(normalizedTicketCounts[t.id], 10)
+        }))
+      };
+
+      // Add meals if present
+      if (Object.keys(mealCounts).length > 0) {
+        payload.meals = Object.entries(mealCounts).map(([meal_id, quantity]) => {
+          const meal = meals.find((m) => m.id === parseInt(meal_id));
+          return {
+            meal_id: parseInt(meal_id),
+            quantity: parseInt(quantity, 10),
+            price_at_order: meal?.price || 0
+          };
+        });
+      }
+
+      console.log("Submitting credit-only payload:", payload);
+
+      // Call onCheckout - backend will handle credit deduction
+      await onCheckout(payload);
+      
+      // Reset the component state
+      setDescription("");
+      setMealCounts({});
+      
+      notify.success(`✅ Credit sale completed! Opening print windows...`);
+      
+      // Start the print process
+      setTimeout(() => {
+        openTwoPrintWindows(finalTotal); // Use finalTotal as totalPaid for credit sales
+      }, 500);
+      
+    } catch (error) {
+      console.error("Credit checkout error:", error);
+      
+      if (error.response?.data?.type === 'INSUFFICIENT_CREDIT') {
+        notify.error(`❌ Insufficient credit balance. ${error.response.data.details || ''}`);
+      } else if (error.response?.data?.type === 'MIXED_PAYMENT_ERROR') {
+        notify.error('❌ Cannot mix credit and cash tickets. Please separate the orders.');
+      } else {
+        notify.error(error.response?.data?.error || "Failed to process credit sale");
+      }
+    }
+  };
+
+  // Update the checkout button text and behavior
+  const getCheckoutButtonText = () => {
+    if (isCheckingCredit) return "Checking...";
+    
+    if (creditStatus?.summary?.payment_type === 'CREDIT_ONLY') {
+      return "💳 Checkout with Credit";
+    } else if (creditStatus?.summary?.payment_type === 'MIXED_ERROR') {
+      return "❌ Mixed Payment Error";
+    } else {
+      return "Checkout";
+    }
+  };
+
+  const getCheckoutButtonColor = () => {
+    if (creditStatus?.summary?.payment_type === 'CREDIT_ONLY') {
+      return "#4CAF50"; // Green for credit
+    } else if (creditStatus?.summary?.payment_type === 'MIXED_ERROR') {
+      return "#f44336"; // Red for error
+    } else {
+      return "#00AEEF"; // Default blue
+    }
   };
 
   // Handle checkout confirmation
@@ -246,7 +395,7 @@ const CheckoutPanel = ({ ticketCounts, types, onCheckout, onClear, mode = "new",
         .filter(method => method !== 'discount')
         .reduce((sum, method) => sum + getAmount(method), 0);
 
-      // MODIFIED: Structure payments data - handle overpayment for any scenario
+      // Structure payments data - handle overpayment for any scenario
       const payments = [];
       const paymentMethods = selectedMethods.filter(method => method !== 'discount' && getAmount(method) > 0);
       
@@ -337,13 +486,6 @@ const CheckoutPanel = ({ ticketCounts, types, onCheckout, onClear, mode = "new",
       }
 
       console.log("Submitting payload:", payload);
-      console.log("Actual amounts paid (for display):", {
-        totalPaid,
-        changeAmount: Math.max(0, totalPaid - finalTotal),
-        paymentBreakdown: selectedMethods
-          .filter(method => method !== 'discount' && getAmount(method) > 0)
-          .map(method => ({ method, actualAmount: getAmount(method) }))
-      });
 
       // Call onCheckout - backend will receive correct total
       await onCheckout(payload);
@@ -494,14 +636,16 @@ const CheckoutPanel = ({ ticketCounts, types, onCheckout, onClear, mode = "new",
     return printWindow;
   };
 
-  // MODIFIED: Build receipt data with simple change calculation
+  // Build receipt data with simple change calculation
   const buildReceiptData = (actualTotalPaid = null) => {
-    // Use passed totalPaid or calculate from current state
-    const totalPaid = actualTotalPaid || selectedMethods
+    const isCredit = creditStatus?.summary?.payment_type === 'CREDIT_ONLY';
+    
+    // For credit sales, totalPaid equals finalTotal (no change)
+    const totalPaid = isCredit ? finalTotal : (actualTotalPaid || selectedMethods
       .filter(method => method !== 'discount')
-      .reduce((sum, method) => sum + getAmount(method), 0);
+      .reduce((sum, method) => sum + getAmount(method), 0));
       
-    const changeAmount = totalPaid > finalTotal ? totalPaid - finalTotal : 0;
+    const changeAmount = !isCredit && totalPaid > finalTotal ? totalPaid - finalTotal : 0;
 
     return {
       header: {
@@ -510,7 +654,7 @@ const CheckoutPanel = ({ ticketCounts, types, onCheckout, onClear, mode = "new",
         cashier: cashierName,
         orderId: `#${new Date().getTime().toString().slice(-6)}`
       },
-      description: description.trim(),
+      description: description.trim() || (isCredit ? 'Credit sale' : ''),
       items: {
         tickets: selected.map(t => ({
           name: `${t.category} - ${t.subcategory}`,
@@ -533,14 +677,16 @@ const CheckoutPanel = ({ ticketCounts, types, onCheckout, onClear, mode = "new",
         mealTotal,
         discountAmount,
         finalTotal,
-        totalPaid, // Actual amount paid by customer
-        changeAmount // Change amount for display
+        totalPaid,
+        changeAmount
       },
-      payments: selectedMethods
+      payments: isCredit ? [
+        { method: 'CREDIT ACCOUNT', amount: finalTotal }
+      ] : selectedMethods
         .filter(method => method !== 'discount' && getAmount(method) > 0)
         .map(method => ({
           method: getPaymentMethodDisplayName(method),
-          amount: getAmount(method) // Show actual amounts paid on receipt
+          amount: getAmount(method)
         }))
     };
   };
@@ -561,7 +707,7 @@ const CheckoutPanel = ({ ticketCounts, types, onCheckout, onClear, mode = "new",
     return validDiscount;
   };
 
-  // MODIFIED: renderPaymentField function - only allow overpayment for cash
+  // renderPaymentField function - only allow overpayment for cash
   const renderPaymentField = (method) => {
     const isOnlyPaymentMethod = selectedMethods.filter(m => m !== 'discount').length === 1;
     const currentAmount = getAmount(method);
@@ -610,7 +756,7 @@ const CheckoutPanel = ({ ticketCounts, types, onCheckout, onClear, mode = "new",
     );
   };
 
-  // MODIFIED: generateReceiptHTML with simple paid/change format
+  // generateReceiptHTML with simple paid/change format
   const generateReceiptHTML = (data, copyLabel = '') => {
     return `
       <div style="width: 74mm; font-family: 'Courier New', monospace; font-size: 11pt; line-height: 1.3; font-weight: bold;">
@@ -662,7 +808,7 @@ const CheckoutPanel = ({ ticketCounts, types, onCheckout, onClear, mode = "new",
         
         <div style="border-top: 3px solid black; margin: 3mm 0;"></div>
         
-        <div style="display: flex; justify-content: space-between; font-weight: 900; margin-top: 3mm; font-size: 14pt; background: #f0f0f0; padding: 2mm; border: 2px solid black;">
+        <div style="display: flex; justify-content: space-between; font-weight: 900, margin-top: 3mm; font-size: 14pt; background: #f0f0f0; padding: 2mm; border: 2px solid black;">
           <span>TOTAL:</span><span>EGP ${data.totals.finalTotal.toFixed(2)}</span>
         </div>
         
@@ -710,6 +856,36 @@ const CheckoutPanel = ({ ticketCounts, types, onCheckout, onClear, mode = "new",
     <>
       <Box mt={2} p={3} border="1px solid #00AEEF" borderRadius={2} bgcolor="#E0F7FF">
         <Typography variant="h6" sx={{ color: "#00AEEF", mb: 2 }}>🧾 Order Summary</Typography>
+
+        {/* Credit status message */}
+        {creditStatus && (
+          <Box sx={{ mb: 2, p: 1, borderRadius: 1, bgcolor: 
+            creditStatus.summary.payment_type === 'CREDIT_ONLY' ? '#e8f5e8' :
+            creditStatus.summary.payment_type === 'MIXED_ERROR' ? '#ffeaea' : '#f0f9ff'
+          }}>
+            <Typography variant="caption" sx={{ 
+              color: 
+                creditStatus.summary.payment_type === 'CREDIT_ONLY' ? '#2e7d32' :
+                creditStatus.summary.payment_type === 'MIXED_ERROR' ? '#d32f2f' : '#1976d2',
+              fontWeight: 'bold'
+            }}>
+              {creditStatus.summary.payment_type === 'CREDIT_ONLY' && '💳 Credit-enabled tickets - No payment input required'}
+              {creditStatus.summary.payment_type === 'CASH_ONLY' && '💵 Cash/Card payment required'}
+              {creditStatus.summary.payment_type === 'MIXED_ERROR' && '❌ Cannot mix credit and cash tickets'}
+            </Typography>
+            
+            {creditStatus.summary.payment_type === 'MIXED_ERROR' && (
+              <Box sx={{ mt: 1 }}>
+                <Typography variant="caption" display="block">
+                  Credit categories: {creditStatus.tickets.filter(t => t.is_credit_enabled).map(t => t.category).join(', ')}
+                </Typography>
+                <Typography variant="caption" display="block">
+                  Cash categories: {creditStatus.tickets.filter(t => !t.is_credit_enabled).map(t => t.category).join(', ')}
+                </Typography>
+              </Box>
+            )}
+          </Box>
+        )}
 
         {/* Tickets section */}
         {selected.length > 0 && (
@@ -828,10 +1004,15 @@ const CheckoutPanel = ({ ticketCounts, types, onCheckout, onClear, mode = "new",
             variant="contained"
             fullWidth
             onClick={handleSubmit}
-            disabled={!hasItems}
-            sx={{ bgcolor: "#00AEEF", "&:hover": { bgcolor: "#0097d6" } }}
+            disabled={!hasItems || isCheckingCredit || creditStatus?.summary?.payment_type === 'MIXED_ERROR'}
+            sx={{ 
+              bgcolor: getCheckoutButtonColor(), 
+              "&:hover": { 
+                bgcolor: creditStatus?.summary?.payment_type === 'CREDIT_ONLY' ? "#45a049" : "#0097d6" 
+              } 
+            }}
           >
-            Checkout
+            {getCheckoutButtonText()}
           </Button>
           <Button 
             variant="outlined" 
@@ -982,4 +1163,3 @@ const CheckoutPanel = ({ ticketCounts, types, onCheckout, onClear, mode = "new",
 };
 
 export default CheckoutPanel;
-

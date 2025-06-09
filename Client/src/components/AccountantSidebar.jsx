@@ -20,7 +20,8 @@ import {
   PersonAdd,
   ChevronLeft,
   ChevronRight,
-  Menu
+  Menu,
+  CreditCard // NEW: Credit management icon
 } from "@mui/icons-material";
 import { Link, useLocation } from "react-router-dom";
 
@@ -39,6 +40,7 @@ const AccountantSidebar = ({ excludeRoutes = [], includeRoutes = [], basePath = 
     { text: "Manage Categories", icon: <Category />, path: `${basePath}/accountant-categories`, id: "categories" },
     { text: "Manage Meals", icon: <LunchDining />, path: `${basePath}/accountant-meals`, id: "meals" },
     { text: "Sell Tickets", icon: <PointOfSale />, path: `${basePath}/sell-tickets`, id: "sell" },
+    { text: "Credit Management", icon: <CreditCard />, path: `${basePath}/credit-management`, id: "credit" }, // NEW: Credit management
     { text: "Register User", icon: <PersonAdd />, path: `${basePath}/register-user`, id: "register" },
   ];
 

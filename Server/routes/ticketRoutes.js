@@ -16,7 +16,8 @@ import {
   assignTicketTypesById,
   getTicketsReportByDate,
   getTicketsReportByDateRange,
-  renameCategoryName
+  renameCategoryName,
+  checkCreditStatus
 } from "../controllers/ticketController.js";
 
 const router = express.Router();
@@ -99,6 +100,8 @@ router.patch('/rename-category', renameCategoryName);
 
 router.get('/tickets-report', getTicketsReportByDate);
 router.get('/tickets-report-range', getTicketsReportByDateRange);
+
+router.post('/check-credit-status', checkCreditStatus);
 
 
 export default router;

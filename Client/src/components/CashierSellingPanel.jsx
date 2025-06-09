@@ -146,25 +146,55 @@ const CashierSellingPanel = () => {
       const modifiedCheckoutData = {
         ...checkoutData,
         tickets: checkoutData.tickets?.map(ticket => {
-          const originalType = types.find(t => t.id === ticket.type_id);
+          const originalType = types.find(t => t.id === ticket.ticket_type_id || t.id === ticket.type_id);
           return {
             ...ticket,
+            ticket_type_id: ticket.ticket_type_id || ticket.type_id,
             category: originalType?.originalCategory || ticket.category
           };
         })
       };
 
-      // Send to backend - CheckoutPanel already handled overpayment logic
+      // Send to backend
       const response = await axios.post(`${baseUrl}/api/tickets/sell`, modifiedCheckoutData);
       
-      notify.success(`Order completed successfully! Order #${response.data.order_id || 'Created'}`);
+      // Handle different response types
+      if (response.data.payment_type === 'CREDIT_ONLY') {
+        // Credit sale success
+        notify.success(`💳 Credit sale completed! Order #${response.data.order_id}`);
+        
+        if (response.data.credit_breakdown) {
+          // Show credit account balances
+          response.data.credit_breakdown.forEach(credit => {
+            notify.info(`${credit.account}: EGP ${credit.amount} used. New balance: EGP ${credit.new_balance}`, {
+              duration: 5000
+            });
+            
+            if (credit.went_into_debt) {
+              notify.warning(`⚠️ ${credit.account} is now in debt!`, { duration: 7000 });
+            }
+          });
+        }
+      } else {
+        // Cash/card sale success
+        notify.success(`✅ Order completed successfully! Order #${response.data.order_id || 'Created'}`);
+      }
       
       // Reset the component state
       setTicketCounts({});
       // Keep selected categories to improve UX
+      
     } catch (error) {
       console.error("Checkout error:", error);
-      notify.error(error.response?.data?.message || "Failed to process checkout");
+      
+      // Handle specific credit errors
+      if (error.response?.data?.type === 'INSUFFICIENT_CREDIT') {
+        notify.error(`❌ Insufficient credit! ${error.response.data.details || ''}`);
+      } else if (error.response?.data?.type === 'MIXED_PAYMENT_ERROR') {
+        notify.error('❌ Cannot mix credit and cash tickets in the same order. Please separate them.');
+      } else {
+        notify.error(error.response?.data?.message || "Failed to process checkout");
+      }
     }
   };
 
