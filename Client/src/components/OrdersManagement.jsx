@@ -94,6 +94,9 @@ const OrdersManagement = () => {
   const [availableTicketTypes, setAvailableTicketTypes] = useState([]);
   const [availableMeals, setAvailableMeals] = useState([]);
   
+  // ADD THIS MISSING STATE VARIABLE
+  const [paymentMethods, setPaymentMethods] = useState([]);
+  
   // Tab state for edit dialog
   const [editTab, setEditTab] = useState(0);
 
@@ -108,6 +111,11 @@ const OrdersManagement = () => {
   useEffect(() => {
     fetchTicketTypes();
     fetchMeals();
+  }, [baseUrl]);
+  
+  // Fetch payment methods on component mount
+  useEffect(() => {
+    fetchPaymentMethods();
   }, [baseUrl]);
   
   // Fetch orders from API
@@ -196,6 +204,37 @@ const OrdersManagement = () => {
       setAvailableMeals(response.data);
     } catch (error) {
       console.error('Error fetching meals:', error);
+    }
+  };
+
+  // Function to fetch payment methods from database
+  const fetchPaymentMethods = async () => {
+    if (!baseUrl) return;
+
+    try {
+      const token = localStorage.getItem('authToken');
+      
+      if (!token) return;
+      
+      const response = await axios.get(`${baseUrl}/api/orders/payment-methods`, {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      
+      setPaymentMethods(response.data);
+      console.log('Payment methods loaded:', response.data);
+    } catch (error) {
+      console.error('Error fetching payment methods:', error);
+      // Fallback to the specific methods you want
+      setPaymentMethods([
+        { value: 'cash', label: 'Cash' },
+        { value: 'visa', label: 'Visa' },
+        { value: 'vodafone_cash', label: 'Vodafone Cash' },
+        { value: 'postponed', label: 'Postponed' },
+        { value: 'discount', label: 'Discount' },
+        { value: 'الاهلي و مصر', label: 'الأهلي و مصر' },
+        { value: 'OTHER', label: 'Other' },
+        { value: 'CREDIT', label: 'Credit' }
+      ]);
     }
   };
 
@@ -629,11 +668,6 @@ const OrdersManagement = () => {
     }
   };
 
-  // Add this helper function to format payment method names
-  const formatPaymentMethod = (method) => {
-    return method.replace('_', ' ').replace(/\b\w/g, l => l.toUpperCase());
-  };
-
   // Update the recalculateOrderTotal function to ensure it properly updates state synchronously
   const recalculateOrderTotal = () => {
     if (!editableOrder) return;
@@ -1026,9 +1060,97 @@ const OrdersManagement = () => {
     }).format(amount);
   };
 
+  // Update the formatPaymentMethod function
+  const formatPaymentMethod = (method) => {
+    const paymentMethod = paymentMethods.find(pm => pm.value === method);
+    if (paymentMethod) {
+      return paymentMethod.label;
+    }
+    
+    // Fallback formatting
+    switch (method) {
+      case 'vodafone_cash':
+        return 'Vodafone Cash';
+      case 'الاهلي و مصر':
+        return 'الأهلي و مصر';
+      case 'OTHER':
+        return 'Other';
+      case 'CREDIT':
+        return 'Credit';
+      default:
+        return method.charAt(0).toUpperCase() + method.slice(1);
+    }
+  };
+
+  // Get payment method color based on type
+  const getPaymentMethodColor = (method) => {
+    switch (method) {
+      case 'cash':
+        return 'success';
+      case 'visa':
+        return 'primary';
+      case 'vodafone_cash':
+      case 'الاهلي و مصر':
+        return 'info';
+      case 'CREDIT':
+        return 'secondary';
+      case 'discount':
+        return 'error';
+      case 'postponed':
+        return 'warning';
+      case 'OTHER':
+        return 'default';
+      default:
+        return 'default';
+    }
+  };
+
   // Handle tab change in edit dialog
   const handleEditTabChange = (event, newValue) => {
     setEditTab(newValue);
+  };
+
+  // Add this state for delete confirmation
+  const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
+  const [orderToDelete, setOrderToDelete] = useState(null);
+
+  // Enhanced delete confirmation function
+  const handleDeleteOrder = (order) => {
+    setOrderToDelete(order);
+    setDeleteDialogOpen(true);
+  };
+
+  const confirmDeleteOrder = async () => {
+    if (!orderToDelete) return;
+
+    try {
+      setLoading(true);
+      setDeleteDialogOpen(false);
+      
+      const token = localStorage.getItem('authToken');
+      
+      if (!token) {
+        notify.error('Authentication required. Please log in again.');
+        return;
+      }
+
+      const response = await axios.delete(`${baseUrl}/api/orders/${orderToDelete.order_id}`, {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+
+      notify.success(`✅ Order #${orderToDelete.order_id} deleted successfully`);
+      
+      // Refresh orders list
+      await fetchOrders();
+      
+    } catch (error) {
+      console.error('Error deleting order:', error);
+      const message = error.response?.data?.error || 'Failed to delete order';
+      notify.error(`❌ ${message}`);
+    } finally {
+      setLoading(false);
+      setOrderToDelete(null);
+    }
   };
 
   return (
@@ -1228,13 +1350,8 @@ const OrdersManagement = () => {
                                   key={index}
                                   label={`${formatPaymentMethod(payment.method)}: ${formatCurrency(payment.amount)}`}
                                   size="small"
-                                  color={
-                                    payment.method === 'cash' ? 'success' :
-                                    payment.method === 'visa' ? 'primary' :
-                                    payment.method === 'vodafone_cash' ? 'info' :
-                                    payment.method === 'discount' ? 'error' :
-                                    'default'  // For postponed
-                                  }
+                                  color={getPaymentMethodColor(payment.method)}
+                                  variant="outlined"
                                   sx={{ mr: 0.5, mb: 0.5 }}
                                 />
                               ))}
@@ -1245,12 +1362,22 @@ const OrdersManagement = () => {
                               </Typography>
                             </TableCell>
                             <TableCell align="center">
-                              <IconButton
-                                color="primary"
-                                onClick={() => handleOpenEditDialog(order)}
-                              >
-                                <EditIcon />
-                              </IconButton>
+                              <Box sx={{ display: 'flex', gap: 1, justifyContent: 'center' }}>
+                                <IconButton
+                                  color="primary"
+                                  onClick={() => handleOpenEditDialog(order)}
+                                  title="Edit Order"
+                                >
+                                  <EditIcon />
+                                </IconButton>
+                                <IconButton
+                                  color="error"
+                                  onClick={() => handleDeleteOrder(order)}
+                                  title="Delete Order"
+                                >
+                                  <DeleteIcon />
+                                </IconButton>
+                              </Box>
                             </TableCell>
                           </TableRow>
                         );
@@ -1482,11 +1609,18 @@ const OrdersManagement = () => {
                                   label="Payment Method"
                                   size="small"
                                 >
-                                  <MenuItem value="cash">Cash</MenuItem>
-                                  <MenuItem value="visa">Visa</MenuItem>
-                                  <MenuItem value="vodafone_cash">{formatPaymentMethod('vodafone_cash')}</MenuItem>
-                                  <MenuItem value="discount" sx={{ color: 'error.main' }}>Discount</MenuItem>
-                                  <MenuItem value="postponed">Postponed</MenuItem>
+                                  {paymentMethods.map((method) => (
+                                    <MenuItem 
+                                      key={method.value} 
+                                      value={method.value}
+                                      sx={{ 
+                                        color: method.value === 'discount' ? 'error.main' : 'inherit',
+                                        fontWeight: method.value === 'CREDIT' ? 'bold' : 'normal'
+                                      }}
+                                    >
+                                      {method.label}
+                                    </MenuItem>
+                                  ))}
                                 </Select>
                               </FormControl>
                               
@@ -1548,6 +1682,70 @@ const OrdersManagement = () => {
               disabled={!validatePaymentTotal()}
             >
               Save Changes
+            </Button>
+          </DialogActions>
+        </Dialog>
+
+        {/* Delete Order Confirmation Dialog */}
+        <Dialog
+          open={deleteDialogOpen}
+          onClose={() => setDeleteDialogOpen(false)}
+          maxWidth="sm"
+          fullWidth
+        >
+          <DialogTitle sx={{ color: 'error.main', display: 'flex', alignItems: 'center', gap: 1 }}>
+            <DeleteIcon />
+            Delete Order
+          </DialogTitle>
+          <DialogContent>
+            {orderToDelete && (
+              <Box>
+                <Typography gutterBottom>
+                  Are you sure you want to delete <strong>Order #{orderToDelete.order_id}</strong>?
+                </Typography>
+                
+                <Box sx={{ mt: 2, p: 2, bgcolor: 'grey.100', borderRadius: 1 }}>
+                  <Typography variant="body2" color="text.secondary">
+                    <strong>Order Details:</strong>
+                  </Typography>
+                  <Typography variant="body2">
+                    • Created: {new Date(orderToDelete.created_at).toLocaleString()}
+                  </Typography>
+                  <Typography variant="body2">
+                    • Cashier: {orderToDelete.user_name}
+                  </Typography>
+                  <Typography variant="body2">
+                    • Total: {formatCurrency(orderToDelete.total_amount)}
+                  </Typography>
+                  {orderToDelete.tickets && (
+                    <Typography variant="body2">
+                      • Tickets: {orderToDelete.tickets.reduce((sum, t) => sum + (t.quantity || 0), 0)}
+                    </Typography>
+                  )}
+                  {orderToDelete.meals && (
+                    <Typography variant="body2">
+                      • Meals: {orderToDelete.meals.reduce((sum, m) => sum + (m.quantity || 0), 0)}
+                    </Typography>
+                  )}
+                </Box>
+                
+                <Typography variant="body2" color="error" sx={{ mt: 2, fontWeight: 'medium' }}>
+                  ⚠️ This action cannot be undone. All tickets will be returned to available status.
+                </Typography>
+              </Box>
+            )}
+          </DialogContent>
+          <DialogActions>
+            <Button onClick={() => setDeleteDialogOpen(false)}>
+              Cancel
+            </Button>
+            <Button 
+              onClick={confirmDeleteOrder}
+              color="error"
+              variant="contained"
+              startIcon={<DeleteIcon />}
+            >
+              Delete Order
             </Button>
           </DialogActions>
         </Dialog>

@@ -205,8 +205,31 @@ END$$;
 
 
 
--- Step 1: Create credit_accounts table
-CREATE TABLE IF NOT EXISTS credit_accounts (
+-- =====================================================
+-- COMPLETE CREDIT SYSTEM SETUP WITH FIXED TRIGGER
+-- =====================================================
+
+-- Step 1: Drop any existing credit system components
+DROP TRIGGER IF EXISTS credit_transaction_trigger ON credit_transactions;
+DROP TRIGGER IF EXISTS trigger_update_credit_balance ON credit_transactions;
+DROP FUNCTION IF EXISTS update_credit_balance() CASCADE;
+DROP TABLE IF EXISTS category_credit_accounts CASCADE;
+DROP TABLE IF EXISTS credit_transactions CASCADE;
+DROP TABLE IF EXISTS credit_accounts CASCADE;
+
+-- Step 2: Add CREDIT to payment_method enum if not exists
+DO $$ 
+BEGIN
+    IF NOT EXISTS (SELECT 1 FROM pg_enum WHERE enumlabel = 'CREDIT' AND enumtypid = (SELECT oid FROM pg_type WHERE typname = 'payment_method')) THEN
+        ALTER TYPE payment_method ADD VALUE 'CREDIT';
+    END IF;
+END $$;
+
+-- Step 3: Add reference column to payments table if not exists
+ALTER TABLE payments ADD COLUMN IF NOT EXISTS reference TEXT;
+
+-- Step 4: Create credit_accounts table
+CREATE TABLE credit_accounts (
     id SERIAL PRIMARY KEY,
     name VARCHAR(255) NOT NULL UNIQUE,
     balance DECIMAL(10,2) DEFAULT 0.00,
@@ -215,20 +238,20 @@ CREATE TABLE IF NOT EXISTS credit_accounts (
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
--- Step 2: Create credit_transactions table for audit trail
-CREATE TABLE IF NOT EXISTS credit_transactions (
+-- Step 5: Create credit_transactions table for audit trail
+CREATE TABLE credit_transactions (
     id SERIAL PRIMARY KEY,
     credit_account_id INTEGER REFERENCES credit_accounts(id) ON DELETE CASCADE,
-    amount DECIMAL(10,2) NOT NULL, -- Positive for credit, negative for debit
-    transaction_type VARCHAR(50) NOT NULL, -- 'manual_add', 'manual_subtract', 'ticket_sale', 'refund'
+    amount DECIMAL(10,2) NOT NULL, -- Positive for deposits, negative for withdrawals
+    transaction_type VARCHAR(50) NOT NULL, -- 'DEPOSIT', 'WITHDRAWAL', 'SALE', 'REFUND', 'ADJUSTMENT', 'INITIAL_BALANCE'
     description TEXT,
-    order_id INTEGER, -- Will reference orders.id when available
-    user_id INTEGER, -- Will reference users.id when available
+    order_id INTEGER REFERENCES orders(id) ON DELETE SET NULL,
+    user_id INTEGER REFERENCES users(id) ON DELETE SET NULL,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
--- Step 3: Link categories to credit accounts
-CREATE TABLE IF NOT EXISTS category_credit_accounts (
+-- Step 6: Create category linking table
+CREATE TABLE category_credit_accounts (
     id SERIAL PRIMARY KEY,
     category_name VARCHAR(255) NOT NULL,
     credit_account_id INTEGER REFERENCES credit_accounts(id) ON DELETE CASCADE,
@@ -236,49 +259,104 @@ CREATE TABLE IF NOT EXISTS category_credit_accounts (
     UNIQUE(category_name, credit_account_id)
 );
 
--- Step 4: Add indexes for performance
-CREATE INDEX IF NOT EXISTS idx_credit_transactions_account ON credit_transactions(credit_account_id);
-CREATE INDEX IF NOT EXISTS idx_credit_transactions_created ON credit_transactions(created_at);
-CREATE INDEX IF NOT EXISTS idx_category_credit_category ON category_credit_accounts(category_name);
+-- Step 7: Create indexes for performance
+CREATE INDEX idx_credit_transactions_account ON credit_transactions(credit_account_id);
+CREATE INDEX idx_credit_transactions_created ON credit_transactions(created_at DESC);
+CREATE INDEX idx_credit_transactions_type ON credit_transactions(transaction_type);
+CREATE INDEX idx_category_credit_category ON category_credit_accounts(category_name);
+CREATE INDEX idx_category_credit_account ON category_credit_accounts(credit_account_id);
 
--- Step 5: Create trigger to update credit account balance automatically
+-- Step 8: Create the FIXED trigger function (no double processing)
 CREATE OR REPLACE FUNCTION update_credit_balance()
 RETURNS TRIGGER AS $$
 BEGIN
+    -- Only update balance once, no double processing
     UPDATE credit_accounts 
     SET balance = balance + NEW.amount,
         updated_at = CURRENT_TIMESTAMP
     WHERE id = NEW.credit_account_id;
+    
+    -- Return NEW to continue with the transaction insert
     RETURN NEW;
 END;
 $$ LANGUAGE plpgsql;
 
--- Drop existing trigger if exists
-DROP TRIGGER IF EXISTS trigger_update_credit_balance ON credit_transactions;
-
--- Create trigger
-CREATE TRIGGER trigger_update_credit_balance
+-- Step 9: Create the trigger (fires AFTER INSERT only)
+CREATE TRIGGER credit_transaction_trigger
     AFTER INSERT ON credit_transactions
     FOR EACH ROW
     EXECUTE FUNCTION update_credit_balance();
-    -- Step 1: Add CREDIT to payment_method enum in a separate transaction
-BEGIN;
-ALTER TYPE payment_method ADD VALUE IF NOT EXISTS 'CREDIT';
-COMMIT;
 
--- Step 2: Verify the enum was updated
-SELECT unnest(enum_range(NULL::payment_method));
+-- Step 10: Insert sample credit accounts for testing
+INSERT INTO credit_accounts (name, balance, description) VALUES
+('Adults Credit Account', 0.00, 'Credit account for adult ticket purchases'),
+('Children Credit Account', 0.00, 'Credit account for children ticket purchases'),
+('Senior Credit Account', 0.00, 'Credit account for senior ticket purchases'),
+('General Credit Account', 0.00, 'General purpose credit account')
+ON CONFLICT (name) DO NOTHING;
 
--- Step 3: Now add the reference column to payments table
-ALTER TABLE payments 
-ADD COLUMN IF NOT EXISTS reference TEXT;
+-- Step 11: Get available categories from ticket_types and show them
+DO $$
+DECLARE
+    category_record RECORD;
+BEGIN
+    RAISE NOTICE 'Available categories in your system:';
+    FOR category_record IN 
+        SELECT DISTINCT category FROM ticket_types WHERE category IS NOT NULL ORDER BY category
+    LOOP
+        RAISE NOTICE '- %', category_record.category;
+    END LOOP;
+END $$;
 
+-- Step 12: Link categories to credit accounts (UPDATE THESE BASED ON YOUR ACTUAL CATEGORIES)
+-- First check what categories you have:
+SELECT DISTINCT category FROM ticket_types ORDER BY category;
 
--- Step 6: Insert sample credit accounts (optional - for testing)
+-- Example category linkages (update category names to match your actual data):
+-- INSERT INTO category_credit_accounts (category_name, credit_account_id) VALUES
+-- ('Adult', 1),
+-- ('Child', 2), 
+-- ('Senior', 3)
+-- ON CONFLICT (category_name, credit_account_id) DO NOTHING;
 
+-- Step 13: Create a view for easy credit account overview
+CREATE OR REPLACE VIEW credit_accounts_overview AS
+SELECT 
+    ca.id,
+    ca.name,
+    ca.balance,
+    ca.description,
+    ca.created_at,
+    ca.updated_at,
+    COALESCE(
+        JSON_AGG(
+            DISTINCT cca.category_name
+        ) FILTER (WHERE cca.category_name IS NOT NULL),
+        '[]'::json
+    ) as linked_categories,
+    COUNT(ct.id) as total_transactions,
+    COALESCE(SUM(CASE WHEN ct.amount > 0 THEN ct.amount ELSE 0 END), 0) as total_deposits,
+    COALESCE(SUM(CASE WHEN ct.amount < 0 THEN ABS(ct.amount) ELSE 0 END), 0) as total_withdrawals
+FROM credit_accounts ca
+LEFT JOIN category_credit_accounts cca ON ca.id = cca.credit_account_id
+LEFT JOIN credit_transactions ct ON ca.id = ct.credit_account_id
+GROUP BY ca.id, ca.name, ca.balance, ca.description, ca.created_at, ca.updated_at
+ORDER BY ca.name;
 
--- Step 7: Link existing categories to credit accounts (adjust category names to match your data)
--- First, let's see what categories you have:
--- SELECT DISTINCT category FROM ticket_types;
+-- Step 14: Verify the setup
+SELECT 'Tables created successfully' as status;
+SELECT table_name FROM information_schema.tables WHERE table_name LIKE 'credit_%';
 
--- Example linkage (update category names based on your actual data):
+-- Test the trigger by inserting a sample transaction
+INSERT INTO credit_transactions (credit_account_id, amount, transaction_type, description, user_id)
+VALUES (1, 100.00, 'INITIAL_BALANCE', 'Test initial balance', 1);
+
+-- Check if the balance was updated correctly
+SELECT name, balance FROM credit_accounts WHERE id = 1;
+
+-- Step 15: Clean up test transaction (optional)
+-- DELETE FROM credit_transactions WHERE description = 'Test initial balance';
+-- UPDATE credit_accounts SET balance = 0.00 WHERE id = 1;
+
+-- Final verification
+SELECT 'Credit system setup completed successfully!' as message;

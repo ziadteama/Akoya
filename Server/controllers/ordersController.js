@@ -323,3 +323,130 @@ export const updateOrder = async (req, res) => {
   }
 };
 
+export const getPaymentMethods = async (req, res) => {
+  try {
+    const query = `
+      SELECT unnest(enum_range(NULL::payment_method)) as method
+    `;
+    
+    const { rows } = await pool.query(query);
+    
+    // Filter to only the methods you want and format them
+    const allowedMethods = ['visa', 'cash', 'vodafone_cash', 'postponed', 'discount', 'الاهلي و مصر', 'OTHER', 'CREDIT'];
+    
+    const paymentMethods = rows
+      .filter(row => allowedMethods.includes(row.method))
+      .map(row => {
+        const method = row.method;
+        let label;
+        
+        // Custom labels for specific methods
+        switch (method) {
+          case 'vodafone_cash':
+            label = 'Vodafone Cash';
+            break;
+          case 'الاهلي و مصر':
+            label = 'الأهلي و مصر';
+            break;
+          case 'OTHER':
+            label = 'Other';
+            break;
+          case 'CREDIT':
+            label = 'Credit';
+            break;
+          default:
+            // Capitalize first letter
+            label = method.charAt(0).toUpperCase() + method.slice(1);
+        }
+        
+        return {
+          value: method,
+          label: label
+        };
+      });
+    
+    res.json(paymentMethods);
+  } catch (error) {
+    console.error('Error fetching payment methods:', error);
+    res.status(500).json({ error: 'Failed to fetch payment methods' });
+  }
+};
+
+// Add this function to your ordersController.js
+export const deleteOrder = async (req, res) => {
+  try {
+    const { orderId } = req.params;
+    
+    if (!orderId) {
+      return res.status(400).json({ error: 'Order ID is required' });
+    }
+
+    const client = await pool.connect();
+    
+    try {
+      await client.query('BEGIN');
+      
+      // Check if order exists
+      const orderCheck = await client.query(
+        'SELECT id, total_amount, created_at FROM orders WHERE id = $1',
+        [orderId]
+      );
+      
+      if (orderCheck.rows.length === 0) {
+        await client.query('ROLLBACK');
+        return res.status(404).json({ error: 'Order not found' });
+      }
+      
+      const order = orderCheck.rows[0];
+      
+      // Delete in proper order to handle foreign key constraints
+      
+      // 1. Delete payments
+      await client.query('DELETE FROM payments WHERE order_id = $1', [orderId]);
+      
+      // 2. Delete order_meals
+      await client.query('DELETE FROM order_meals WHERE order_id = $1', [orderId]);
+      
+      // 3. Delete tickets (set order_id to NULL or delete based on your business logic)
+      // Option A: Set tickets back to available
+      await client.query(
+        `UPDATE tickets 
+         SET order_id = NULL, status = 'available', sold_at = NULL, sold_price = NULL 
+         WHERE order_id = $1`,
+        [orderId]
+      );
+      
+      // Option B: Delete tickets completely (uncomment if you prefer this)
+      // await client.query('DELETE FROM tickets WHERE order_id = $1', [orderId]);
+      
+      // 4. Delete credit transactions related to this order (if any)
+      await client.query('DELETE FROM credit_transactions WHERE order_id = $1', [orderId]);
+      
+      // 5. Finally delete the order
+      await client.query('DELETE FROM orders WHERE id = $1', [orderId]);
+      
+      await client.query('COMMIT');
+      
+      res.json({
+        success: true,
+        message: 'Order deleted successfully',
+        deletedOrder: {
+          id: orderId,
+          totalAmount: order.total_amount,
+          createdAt: order.created_at
+        }
+      });
+      
+    } catch (error) {
+      await client.query('ROLLBACK');
+      throw error;
+    } finally {
+      client.release();
+    }
+    
+  } catch (error) {
+    console.error('Error deleting order:', error);
+    res.status(500).json({ error: 'Failed to delete order' });
+  }
+};
+
