@@ -346,7 +346,7 @@ export const getAllLinkedCategories = async (req, res) => {
 };
 
 // Process credit deduction for ticket sales (helper function for ticket controller)
-export const processTicketSaleCredit = async (orderId, tickets, client) => {
+export const processTicketSaleCredit = async (orderId, tickets, client, mealTotal = 0) => {
   try {
     const creditDeductions = new Map();
     
@@ -366,21 +366,20 @@ export const processTicketSaleCredit = async (orderId, tickets, client) => {
       if (creditQuery.rows.length === 0) continue; // No credit account linked
       
       const { credit_account_id, account_name, balance } = creditQuery.rows[0];
-      
-      // Calculate deduction amount (negative value for deduction)
-      const deductionAmount = -(ticket.quantity * ticket.price);
+      const ticketAmount = ticket.quantity * ticket.price;
       
       if (creditDeductions.has(credit_account_id)) {
         creditDeductions.set(credit_account_id, {
           ...creditDeductions.get(credit_account_id),
-          amount: creditDeductions.get(credit_account_id).amount + deductionAmount,
+          ticketAmount: creditDeductions.get(credit_account_id).ticketAmount + ticketAmount,
           totalTickets: creditDeductions.get(credit_account_id).totalTickets + ticket.quantity
         });
       } else {
         creditDeductions.set(credit_account_id, {
           accountId: credit_account_id,
           accountName: account_name,
-          amount: deductionAmount,
+          ticketAmount: ticketAmount,
+          mealAmount: 0, // Will be distributed below
           categories: [category],
           totalTickets: ticket.quantity,
           currentBalance: parseFloat(balance)
@@ -388,41 +387,173 @@ export const processTicketSaleCredit = async (orderId, tickets, client) => {
       }
     }
     
-    // Process all credit deductions
+    // Distribute meal costs proportionally across credit accounts
+    if (mealTotal > 0 && creditDeductions.size > 0) {
+      const totalTicketAmount = Array.from(creditDeductions.values())
+        .reduce((sum, deduction) => sum + deduction.ticketAmount, 0);
+      
+      for (const [accountId, deduction] of creditDeductions) {
+        if (totalTicketAmount > 0) {
+          // Distribute meal cost proportionally based on ticket amounts
+          const proportionalMealAmount = (deduction.ticketAmount / totalTicketAmount) * mealTotal;
+          deduction.mealAmount = proportionalMealAmount;
+        }
+      }
+    }
+    
+    // Process all credit deductions - TRIGGER WILL HANDLE BALANCE UPDATES
     const creditTransactions = [];
     let totalCreditUsed = 0;
     
     for (const [accountId, deduction] of creditDeductions) {
-      // Create credit transaction (negative amount = deduction)
+      const totalDeductionAmount = -(deduction.ticketAmount + deduction.mealAmount); // Negative for deduction
+      
+      // Optional: Check for insufficient credit
+      const balanceCheck = await client.query(
+        'SELECT balance FROM credit_accounts WHERE id = $1',
+        [accountId]
+      );
+      
+      const currentBalance = parseFloat(balanceCheck.rows[0].balance);
+      const newBalance = currentBalance + totalDeductionAmount; // amount is negative
+      
+      if (newBalance < 0) {
+        console.warn(`⚠️ Credit account ${deduction.accountName} will go into debt: ${currentBalance} + (${totalDeductionAmount}) = ${newBalance}`);
+        // Uncomment to prevent debt:
+        // throw new Error(`Insufficient credit balance in account "${deduction.accountName}". Available: ${currentBalance}, Required: ${Math.abs(totalDeductionAmount)}`);
+      }
+      
+      // Insert credit transaction - TRIGGER WILL UPDATE BALANCE AUTOMATICALLY
       const transactionResult = await client.query(
         `INSERT INTO credit_transactions 
-         (credit_account_id, amount, transaction_type, description, order_id)
-         VALUES ($1, $2, 'ticket_sale', $3, $4) RETURNING *`,
+         (credit_account_id, amount, transaction_type, description, order_id, created_at)
+         VALUES ($1, $2, 'ticket_sale', $3, $4, CURRENT_TIMESTAMP)
+         RETURNING id, amount`,
         [
           accountId,
-          deduction.amount,
-          `${deduction.totalTickets} tickets sold for categories: ${deduction.categories.join(', ')}`,
+          totalDeductionAmount, // Negative amount for deduction (tickets + meals)
+          `Order sale: ${deduction.totalTickets} tickets (EGP ${deduction.ticketAmount.toFixed(2)}) + meals (EGP ${deduction.mealAmount.toFixed(2)}) from categories: ${deduction.categories.join(', ')}`,
           orderId
         ]
       );
       
-      // Calculate actual credit used (the positive amount for payment record)
-      const creditUsedForPayment = Math.abs(deduction.amount);
-      totalCreditUsed += creditUsedForPayment;
-      
       creditTransactions.push({
-        ...transactionResult.rows[0],
+        transactionId: transactionResult.rows[0].id,
+        accountId: accountId,
         accountName: deduction.accountName,
-        creditUsed: creditUsedForPayment,
-        newBalance: deduction.currentBalance + deduction.amount, // amount is negative
-        wentIntoDebt: (deduction.currentBalance + deduction.amount) < 0
+        ticketAmount: deduction.ticketAmount,
+        mealAmount: deduction.mealAmount,
+        totalAmount: Math.abs(totalDeductionAmount),
+        categories: deduction.categories,
+        ticketCount: deduction.totalTickets,
+        newBalance: newBalance,
+        wentIntoDebt: newBalance < 0
       });
+      
+      totalCreditUsed += Math.abs(totalDeductionAmount);
+      
+      console.log(`💳 Credit deducted from ${deduction.accountName}: EGP ${Math.abs(totalDeductionAmount).toFixed(2)} (${deduction.totalTickets} tickets: ${deduction.ticketAmount.toFixed(2)}, meals: ${deduction.mealAmount.toFixed(2)})`);
     }
     
-    return { creditTransactions, totalCreditUsed };
+    return {
+      success: true,
+      creditTransactions,
+      totalCreditUsed,
+      message: `Successfully processed ${creditTransactions.length} credit account(s) with total deduction of EGP ${totalCreditUsed.toFixed(2)} (including meals)`
+    };
     
   } catch (error) {
-    console.error('Error processing ticket sale credit:', error);
+    console.error('❌ Error in processTicketSaleCredit:', error);
+    throw error;
+  }
+};
+
+// Add new function to handle meal-only credit orders
+export const processMealOnlyCredit = async (orderId, meals, client, defaultCreditAccountId = null) => {
+  try {
+    if (!meals || meals.length === 0) {
+      return { success: true, creditTransactions: [], totalCreditUsed: 0 };
+    }
+    
+    let mealTotal = 0;
+    for (const meal of meals) {
+      mealTotal += (meal.price || 0) * (meal.quantity || 0);
+    }
+    
+    if (mealTotal <= 0) {
+      return { success: true, creditTransactions: [], totalCreditUsed: 0 };  
+    }
+    
+    // If no default credit account specified, use the first available one
+    let creditAccountId = defaultCreditAccountId;
+    if (!creditAccountId) {
+      const accountQuery = await client.query(
+        'SELECT id FROM credit_accounts ORDER BY id LIMIT 1'
+      );
+      
+      if (accountQuery.rows.length === 0) {
+        throw new Error('No credit accounts available for meal-only orders');
+      }
+      
+      creditAccountId = accountQuery.rows[0].id;
+    }
+    
+    // Get credit account details
+    const accountQuery = await client.query(
+      'SELECT id, name, balance FROM credit_accounts WHERE id = $1',
+      [creditAccountId]
+    );
+    
+    if (accountQuery.rows.length === 0) {
+      throw new Error(`Credit account ${creditAccountId} not found`);
+    }
+    
+    const account = accountQuery.rows[0];
+    const deductionAmount = -mealTotal; // Negative for deduction
+    const newBalance = parseFloat(account.balance) + deductionAmount;
+    
+    if (newBalance < 0) {
+      console.warn(`⚠️ Credit account ${account.name} will go into debt: ${account.balance} + (${deductionAmount}) = ${newBalance}`);
+    }
+    
+    // Insert credit transaction
+    const transactionResult = await client.query(
+      `INSERT INTO credit_transactions 
+       (credit_account_id, amount, transaction_type, description, order_id, created_at)
+       VALUES ($1, $2, 'meal_sale', $3, $4, CURRENT_TIMESTAMP)
+       RETURNING id, amount`,
+      [
+        creditAccountId,
+        deductionAmount,
+        `Meal-only order: EGP ${mealTotal.toFixed(2)} (${meals.length} meal items)`,
+        orderId
+      ]
+    );
+    
+    const creditTransaction = {
+      transactionId: transactionResult.rows[0].id,
+      accountId: creditAccountId,
+      accountName: account.name,
+      ticketAmount: 0,
+      mealAmount: mealTotal,
+      totalAmount: mealTotal,
+      categories: ['meals'],
+      ticketCount: 0,
+      newBalance: newBalance,
+      wentIntoDebt: newBalance < 0
+    };
+    
+    console.log(`💳 Credit deducted from ${account.name}: EGP ${mealTotal.toFixed(2)} (meals only)`);
+    
+    return {
+      success: true,
+      creditTransactions: [creditTransaction],
+      totalCreditUsed: mealTotal,
+      message: `Successfully processed meal-only credit order with total deduction of EGP ${mealTotal.toFixed(2)}`
+    };
+    
+  } catch (error) {
+    console.error('❌ Error in processMealOnlyCredit:', error);
     throw error;
   }
 };

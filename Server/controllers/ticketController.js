@@ -44,7 +44,8 @@ export const sellTickets = async (req, res) => {
     const { tickets = [], user_id, description, payments = [], meals = [] } = req.body;
 
     // Validate and categorize tickets
-    let grossTotal = 0;
+    let ticketTotal = 0;
+    let mealTotal = 0;
     const validTickets = [];
     let creditCategories = new Set();
     let nonCreditCategories = new Set();
@@ -69,15 +70,15 @@ export const sellTickets = async (req, res) => {
       }
       
       const ticketType = rows[0];
-      const ticketTotal = ticketType.price * ticket.quantity;
-      grossTotal += ticketTotal;
+      const ticketAmount = ticketType.price * ticket.quantity;
+      ticketTotal += ticketAmount;
       
       const ticketData = {
         ...ticket,
         price: ticketType.price,
         category: ticketType.category,
         subcategory: ticketType.subcategory,
-        total: ticketTotal,
+        total: ticketAmount,
         is_credit_enabled: !!ticketType.credit_account_id,
         credit_account_id: ticketType.credit_account_id,
         credit_account_name: ticketType.credit_account_name,
@@ -94,19 +95,21 @@ export const sellTickets = async (req, res) => {
       }
     }
 
-    // Add meals total to gross total
+    // Calculate meal total
     if (meals && Array.isArray(meals)) {
       for (const meal of meals) {
-        grossTotal += (meal.price || 0) * (meal.quantity || 0);
+        mealTotal += (meal.price || 0) * (meal.quantity || 0);
       }
     }
 
+    const grossTotal = ticketTotal + mealTotal;
+
     // For meals-only orders, skip credit/cash category checking
-    const hasTickers = tickets && tickets.length > 0;
+    const hasTickets = tickets && tickets.length > 0;
     const hasMeals = meals && meals.length > 0;
 
     // Only check for mixed credit/non-credit if there are actual tickets
-    if (hasTickers && creditCategories.size > 0 && nonCreditCategories.size > 0) {
+    if (hasTickets && creditCategories.size > 0 && nonCreditCategories.size > 0) {
       await client.query('ROLLBACK');
       return res.status(400).json({ 
         error: "Cannot mix credit-enabled and cash-only tickets in the same order",
@@ -117,25 +120,29 @@ export const sellTickets = async (req, res) => {
     }
 
     // For meals-only orders, treat as cash-only
-    const isMealsOnly = !hasTickers && hasMeals;
-    const isCredit = hasTickers && creditCategories.size > 0;
+    const isMealsOnly = !hasTickets && hasMeals;
+    const isCredit = hasTickets && creditCategories.size > 0;
+    const isPostponedPayment = payments.some(p => p.method === 'postponed');
 
     // Create order
     const orderResult = await client.query(
       `INSERT INTO orders (user_id, description, gross_total, total_amount, created_at)
        VALUES ($1, $2, $3, $3, CURRENT_TIMESTAMP)
        RETURNING id`,
-      [user_id, description || (creditCategories.size > 0 ? 'Credit sale' : 'Cash sale'), grossTotal]
+      [user_id, description || (isCredit ? 'Credit sale' : 'Cash sale'), grossTotal]
     );
     
     const orderId = orderResult.rows[0].id;
 
-    // Process credit-only or cash-only orders
-    if (creditCategories.size > 0) {
-      // CREDIT-ONLY ORDER - NOW USES POSTPONED PAYMENT
+    // Process credit-only orders with postponed payment
+    if (isCredit && isPostponedPayment) {
       console.log('🏦 Processing credit-only order with postponed payment...');
+      console.log(`💰 Total ticket amount: EGP ${ticketTotal.toFixed(2)}`);
+      console.log(`🍽️ Total meal amount: EGP ${mealTotal.toFixed(2)}`);
+      console.log(`📊 Grand total to deduct: EGP ${grossTotal.toFixed(2)}`);
       
-      const creditResult = await processTicketSaleCredit(orderId, validTickets, client);
+      // Process credit with meal total included
+      const creditResult = await processTicketSaleCredit(orderId, validTickets, client, mealTotal);
       
       // Insert tickets
       await insertTicketsToDatabase(client, orderId, validTickets);
@@ -143,7 +150,7 @@ export const sellTickets = async (req, res) => {
       // Insert meals if any
       await insertMealsToDatabase(client, orderId, meals);
 
-      // *** ADD POSTPONED PAYMENT RECORD ***
+      // Add postponed payment record
       await client.query(
         `INSERT INTO payments (order_id, method, amount, reference)
          VALUES ($1, 'postponed'::payment_method, $2, 'Credit account deduction')`,
@@ -156,11 +163,11 @@ export const sellTickets = async (req, res) => {
         message: "Credit sale completed successfully with postponed payment",
         order_id: orderId,
         total_amount: grossTotal,
-        payment_type: "POSTPONED", // Changed from CREDIT_ONLY
+        payment_type: "POSTPONED",
         credit_used: creditResult.totalCreditUsed,
         credit_breakdown: creditResult.creditTransactions.map(ct => ({
           account: ct.accountName,
-          amount: ct.creditUsed,
+          amount: ct.totalAmount,
           new_balance: ct.newBalance,
           went_into_debt: ct.wentIntoDebt
         }))
@@ -462,6 +469,7 @@ export const generateTickets = async (req, res) => {
  * @route POST /api/tickets/checkout-existing
  * @access Private
  */
+
 export const checkoutExistingTickets = async (req, res) => {
   const client = await pool.connect();
   
@@ -480,7 +488,13 @@ export const checkoutExistingTickets = async (req, res) => {
     
     // Verify all tickets exist and are available
     const ticketsResult = await client.query(
-      `SELECT id, ticket_type_id, status FROM tickets WHERE id = ANY($1)`,
+      `SELECT t.id, t.ticket_type_id, t.status, tt.price, tt.category, tt.subcategory,
+              cca.credit_account_id, ca.name as credit_account_name, ca.balance as credit_balance
+       FROM tickets t
+       JOIN ticket_types tt ON t.ticket_type_id = tt.id
+       LEFT JOIN category_credit_accounts cca ON tt.category = cca.category_name
+       LEFT JOIN credit_accounts ca ON cca.credit_account_id = ca.id
+       WHERE t.id = ANY($1)`,
       [ticket_ids]
     );
     
@@ -497,47 +511,112 @@ export const checkoutExistingTickets = async (req, res) => {
       });
     }
     
-    // Get ticket prices
-    const ticketTypesResult = await client.query(
-      `SELECT tt.id, tt.price, t.id as ticket_id 
-       FROM ticket_types tt
-       JOIN tickets t ON t.ticket_type_id = tt.id
-       WHERE t.id = ANY($1)`,
-      [ticket_ids]
-    );
-    
-    // Calculate total
-    const total = ticketTypesResult.rows.reduce((sum, row) => sum + parseFloat(row.price || 0), 0);
-    
+    // Categorize tickets and calculate totals
+    let ticketTotal = 0;
+    let mealTotal = 0;
+    const validTickets = [];
+    let creditCategories = new Set();
+    let nonCreditCategories = new Set();
+
+    // Process tickets
+    for (const ticket of ticketsResult.rows) {
+      const ticketPrice = parseFloat(ticket.price || 0);
+      ticketTotal += ticketPrice;
+      
+      const ticketData = {
+        id: ticket.id,
+        ticket_type_id: ticket.ticket_type_id,
+        price: ticketPrice,
+        category: ticket.category,
+        subcategory: ticket.subcategory,
+        is_credit_enabled: !!ticket.credit_account_id,
+        credit_account_id: ticket.credit_account_id,
+        credit_account_name: ticket.credit_account_name,
+        credit_balance: ticket.credit_balance,
+        quantity: 1 // Existing tickets are always quantity 1
+      };
+
+      validTickets.push(ticketData);
+
+      // Track credit vs non-credit categories
+      if (ticketData.is_credit_enabled) {
+        creditCategories.add(ticketData.category);
+      } else {
+        nonCreditCategories.add(ticketData.category);
+      }
+    }
+
+    // Add meals total
+    if (meals && Array.isArray(meals)) {
+      for (const meal of meals) {
+        mealTotal += (meal.price || 0) * (meal.quantity || 0);
+      }
+    }
+
+    const grossTotal = ticketTotal + mealTotal;
+
+    // Check for mixed credit/non-credit orders
+    const hasTickets = ticket_ids.length > 0;
+    const hasMeals = meals && meals.length > 0;
+
+    // Only check for mixed credit/non-credit if there are actual tickets
+    if (hasTickets && creditCategories.size > 0 && nonCreditCategories.size > 0) {
+      await client.query('ROLLBACK');
+      return res.status(400).json({ 
+        error: "Cannot mix credit-enabled and cash-only tickets in the same order",
+        type: "MIXED_PAYMENT_ERROR",
+        creditCategories: Array.from(creditCategories),
+        nonCreditCategories: Array.from(nonCreditCategories)
+      });
+    }
+
+    // Determine order type
+    const isCredit = hasTickets && creditCategories.size > 0;
+    const isPostponedPayment = payments.some(p => p.method === 'postponed');
+
     // Create order
     const orderResult = await client.query(
-      `INSERT INTO orders (total_amount, gross_total, user_id, description) 
-       VALUES ($1, $2, $3, $4) RETURNING id`,
-      [total, total, user_id || null, description || '']
+      `INSERT INTO orders (user_id, description, gross_total, total_amount, created_at)
+       VALUES ($1, $2, $3, $3, CURRENT_TIMESTAMP)
+       RETURNING id`,
+      [user_id || null, description || (isCredit ? 'Credit sale - existing tickets' : 'Cash sale - existing tickets'), grossTotal]
     );
     
     const orderId = orderResult.rows[0].id;
-    
-    // Mark tickets as sold
-    await client.query(
-      `UPDATE tickets 
-       SET status = 'sold', 
-           order_id = $1, 
-           sold_at = CURRENT_TIMESTAMP, 
-           sold_price = (
-             SELECT price FROM ticket_types 
-             WHERE id = tickets.ticket_type_id
-           )
-       WHERE id = ANY($2)`,
-      [orderId, ticket_ids]
-    );
-    
-    // Add payments - handle postponed payment for credit categories
-    for (const payment of payments) {
-      // Ensure payment method is properly cast to enum type
+
+    // Process credit-enabled tickets with postponed payment
+    if (isCredit && isPostponedPayment) {
+      console.log('🏦 Processing credit-enabled existing tickets with postponed payment...');
+      console.log(`💰 Total ticket amount: EGP ${ticketTotal.toFixed(2)}`);
+      console.log(`🍽️ Total meal amount: EGP ${mealTotal.toFixed(2)}`);
+      console.log(`📊 Grand total to deduct: EGP ${grossTotal.toFixed(2)}`);
+      
+      // Import and use the credit processing function WITH meal total
+      const { processTicketSaleCredit } = await import('./creditController.js');
+      const creditResult = await processTicketSaleCredit(orderId, validTickets, client, mealTotal);
+      
+      console.log('💳 Credit processing completed:', creditResult);
+    }
+
+    // Mark tickets as sold with proper price
+    for (const ticket of validTickets) {
       await client.query(
-        `INSERT INTO payments (order_id, method, amount) VALUES ($1, $2::payment_method, $3)`,
-        [orderId, payment.method, payment.amount]
+        `UPDATE tickets 
+         SET status = 'sold', 
+             order_id = $1, 
+             sold_at = CURRENT_TIMESTAMP, 
+             sold_price = $2
+         WHERE id = $3`,
+        [orderId, ticket.price, ticket.id]
+      );
+    }
+    
+    // Add payments
+    for (const payment of payments) {
+      await client.query(
+        `INSERT INTO payments (order_id, method, amount, reference) 
+         VALUES ($1, $2::payment_method, $3, $4)`,
+        [orderId, payment.method, payment.amount, payment.reference || (isCredit ? 'Credit account deduction' : null)]
       );
     }
     
@@ -553,16 +632,37 @@ export const checkoutExistingTickets = async (req, res) => {
     }
     
     await client.query('COMMIT');
-    res.status(200).json({ 
-      success: true, 
-      message: "Tickets sold successfully", 
-      order_id: orderId 
-    });
+
+    // Return appropriate response
+    if (isCredit && isPostponedPayment) {
+      res.status(200).json({ 
+        success: true, 
+        message: "Credit sale completed successfully with postponed payment", 
+        order_id: orderId,
+        total_amount: grossTotal,
+        payment_type: "POSTPONED",
+        tickets_processed: ticket_ids.length,
+        meals_processed: meals ? meals.length : 0
+      });
+    } else {
+      res.status(200).json({ 
+        success: true, 
+        message: "Cash sale completed successfully", 
+        order_id: orderId,
+        total_amount: grossTotal,
+        payment_type: "CASH_ONLY",
+        tickets_processed: ticket_ids.length,
+        meals_processed: meals ? meals.length : 0
+      });
+    }
     
   } catch (error) {
     await client.query('ROLLBACK');
-    console.error("Error selling tickets:", error);
-    res.status(500).json({ message: "Server error: " + error.message });
+    console.error("Error selling existing tickets:", error);
+    res.status(500).json({ 
+      message: "Server error: " + error.message,
+      type: error.message.includes('Insufficient') ? 'INSUFFICIENT_CREDIT' : 'SALE_ERROR'
+    });
   } finally {
     client.release();
   }

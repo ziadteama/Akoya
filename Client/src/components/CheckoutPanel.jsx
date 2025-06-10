@@ -293,15 +293,25 @@ const CheckoutPanel = ({ ticketCounts, types, onCheckout, onClear, mode = "new",
   // Check credit status when tickets change - FIXED VERSION
   useEffect(() => {
     const checkCreditStatus = async () => {
-      if (!baseUrl || mode === "existing") {
+      if (!baseUrl) {
         setCreditStatus(null);
         return;
       }
       
-      // Create a stable ticket type IDs array for comparison
-      const ticketTypeIds = selected.map(t => t.id).sort();
+      let ticketTypeIds = [];
       
-      // If no tickets selected, clear credit status
+      // For existing tickets mode, get ticket_type_id from ticket details
+      if (mode === "existing" && normalizedTicketIds.length > 0) {
+        ticketTypeIds = normalizedTicketDetails
+          .filter(ticket => ticket.ticket_type_id) // Only check tickets that have types assigned
+          .map(ticket => ticket.ticket_type_id);
+      } 
+      // For new tickets mode, use selected ticket types
+      else if (mode === "new" && selected.length > 0) {
+        ticketTypeIds = selected.map(t => t.id);
+      }
+      
+      // If no ticket types to check, clear credit status
       if (ticketTypeIds.length === 0) {
         setCreditStatus(null);
         return;
@@ -314,6 +324,7 @@ const CheckoutPanel = ({ ticketCounts, types, onCheckout, onClear, mode = "new",
           ticketTypeIds
         });
         
+        console.log('Credit status check result:', data);
         setCreditStatus(data);
       } catch (error) {
         console.error('Error checking credit status:', error);
@@ -324,7 +335,11 @@ const CheckoutPanel = ({ ticketCounts, types, onCheckout, onClear, mode = "new",
     };
     
     checkCreditStatus();
-  }, [baseUrl, mode, selected.length, selected.map(t => t.id).sort().join(',')]);
+  }, [baseUrl, mode, normalizedTicketIds.length, normalizedTicketDetails.length, selected.length, 
+      // Add dependencies for ticket type IDs to trigger recheck when assignments change
+      normalizedTicketDetails.map(t => t.ticket_type_id).sort().join(','),
+      selected.map(t => t.id).sort().join(',')
+]);
 
   const handleSubmit = () => {
     // Check if this is a credit-only order
@@ -512,54 +527,66 @@ const CheckoutPanel = ({ ticketCounts, types, onCheckout, onClear, mode = "new",
         return;
       }
 
-      // Create payload with 'postponed' payment instead of no payments
+      // Create payload with 'postponed' payment for credit-linked categories
       let payload = {
         user_id,
         description: description.trim() || `Credit sale - ${new Date().toLocaleString()}`,
         // Use 'postponed' payment type for credit-linked categories
         payments: [{
           method: 'postponed',
-          amount: parseFloat(finalTotal.toFixed(2))
+          amount: parseFloat(finalTotal.toFixed(2)) // TOTAL including meals
         }],
-        total_amount: finalTotal,
+        total_amount: finalTotal, // TOTAL including meals
         gross_total: ticketTotal + mealTotal
       };
 
-      // FIXED: Always include tickets array, even if empty
-      if (selected.length > 0) {
+      // Handle tickets based on mode
+      if (mode === "existing" && normalizedTicketIds.length > 0) {
+        // For existing tickets, send ticket IDs
+        payload.ticket_ids = normalizedTicketIds;
+        console.log('Credit checkout with existing ticket IDs:', payload.ticket_ids);
+      } else if (mode === "new" && selected.length > 0) {
+        // For new tickets, send ticket type and quantity
         payload.tickets = selected.map((t) => ({
           ticket_type_id: parseInt(t.id, 10),
           quantity: parseInt(normalizedTicketCounts[t.id], 10)
         }));
+        console.log('Credit checkout with new tickets:', payload.tickets);
       } else {
+        // Always provide empty tickets array when no tickets selected
         payload.tickets = [];
       }
 
-      // FIXED: Use correct field names for backend
+      // Handle meals if present - MEALS WILL BE DEDUCTED FROM CREDIT TOO
       if (Object.keys(mealCounts).length > 0) {
         payload.meals = Object.entries(mealCounts).map(([meal_id, quantity]) => {
           const meal = meals.find((m) => m.id === parseInt(meal_id));
-          const mealData = {
-            id: parseInt(meal_id),        // Backend expects 'id'
+          return {
+            id: parseInt(meal_id),
             quantity: parseInt(quantity, 10),
-            price: Number(meal?.price || 0)  // Backend expects 'price'
+            price: Number(meal?.price || 0)
           };
-          console.log('Credit meal data being sent:', mealData);
-          return mealData;
         });
-        console.log('Full credit meals array:', payload.meals);
+        console.log('Credit meals array (will be deducted from credit):', payload.meals);
       }
 
-      console.log("Submitting credit-only payload with postponed payment:", payload);
+      console.log("=== CREDIT CHECKOUT PAYLOAD (INCLUDING MEALS) ===");
+      console.log("Mode:", mode);
+      console.log("User ID:", payload.user_id);
+      console.log("Payment method:", payload.payments[0].method);
+      console.log("TOTAL amount (tickets + meals):", payload.total_amount);
+      console.log("Tickets/Ticket IDs:", payload.tickets || payload.ticket_ids);
+      console.log("Meals (deducted from credit):", payload.meals);
+      console.log("===============================");
 
-      // Call onCheckout - backend will handle credit deduction
+      // Call onCheckout - backend will handle credit deduction for FULL TOTAL
       await onCheckout(payload);
       
       // Reset the component state
       setDescription("");
       setMealCounts({});
       
-      notify.success(`✅ Credit sale completed with postponed payment! Opening print windows...`);
+      notify.success(`✅ Credit sale completed! Total deducted: EGP ${finalTotal.toFixed(2)} (tickets + meals)`);
       
       // Start the print process
       setTimeout(() => {
