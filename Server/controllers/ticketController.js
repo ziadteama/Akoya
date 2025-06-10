@@ -749,6 +749,7 @@ export const updateTicketTypeArchiveStatus = async (req, res) => {
   }
 };
 
+
 export const assignTicketTypesById = async (req, res) => {
   const { assignments } = req.body;
 
@@ -757,23 +758,25 @@ export const assignTicketTypesById = async (req, res) => {
     return res.status(400).json({ message: "Provide a list of ticket assignments" });
   }
 
-  // Validate each assignment
+  // Validate each assignment - ALLOW NULL for unassignment
   for (const entry of assignments) {
-    if (
-      !entry.id ||
-      !entry.ticket_type_id ||
-      typeof entry.id !== "number" ||
-      typeof entry.ticket_type_id !== "number"
-    ) {
+    if (!entry.id || typeof entry.id !== "number") {
       return res.status(400).json({
-        message: `Invalid assignment entry: ${JSON.stringify(entry)}`
+        message: `Invalid assignment entry - missing or invalid ID: ${JSON.stringify(entry)}`
+      });
+    }
+    
+    // Allow ticket_type_id to be null for unassignment
+    if (entry.ticket_type_id !== null && (typeof entry.ticket_type_id !== "number" || entry.ticket_type_id <= 0)) {
+      return res.status(400).json({
+        message: `Invalid assignment entry - ticket_type_id must be a positive number or null: ${JSON.stringify(entry)}`
       });
     }
   }
 
   try {
     const ids = assignments.map(a => a.id);
-    const typeIds = assignments.map(a => a.ticket_type_id);
+    const typeIds = assignments.map(a => a.ticket_type_id); // This can now include null values
 
     const query = `
       UPDATE tickets AS t
@@ -783,25 +786,34 @@ export const assignTicketTypesById = async (req, res) => {
                UNNEST($2::int[]) AS ticket_type_id
       ) AS a
       WHERE t.id = a.id
-      RETURNING *;
+      RETURNING t.id, t.ticket_type_id, 
+                CASE WHEN t.ticket_type_id IS NULL THEN 'unassigned' ELSE 'assigned' END as assignment_status;
     `;
 
     const { rows } = await pool.query(query, [ids, typeIds]);
 
     if (rows.length === 0) {
-      return res.status(404).json({ message: "No tickets updated" });
+      return res.status(404).json({ message: "No tickets found with the provided IDs" });
     }
 
+    // Separate assigned vs unassigned results
+    const assigned = rows.filter(row => row.ticket_type_id !== null);
+    const unassigned = rows.filter(row => row.ticket_type_id === null);
+
     res.json({
-      message: "Ticket types assigned successfully",
+      message: `Successfully processed ${rows.length} tickets`,
+      results: {
+        assigned: assigned.length,
+        unassigned: unassigned.length,
+        details: rows
+      },
       updated: rows
     });
   } catch (error) {
-    console.error("Error assigning ticket types:", error);
-    res.status(500).json({ message: "Server error" });
+    console.error("Error assigning/unassigning ticket types:", error);
+    res.status(500).json({ message: "Server error: " + error.message });
   }
 };
-
 export const getTicketsReportByDate = async (req, res) => {
   try {
     const { date } = req.query;

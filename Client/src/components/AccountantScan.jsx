@@ -364,6 +364,40 @@ const AccountantScan = () => {
     return summary;
   };
 
+  // NEW: Assignment status helper function
+  const getAssignmentStatus = () => {
+    if (ticketDetails.length === 0) return { type: 'none', count: 0 };
+    
+    // Check if tickets have ticket_type_id (assigned) or not (unassigned)
+    const assignedTickets = ticketDetails.filter(ticket => 
+      ticket.ticket_type_id && ticket.ticket_type_id !== null
+    );
+    const unassignedTickets = ticketDetails.filter(ticket => 
+      !ticket.ticket_type_id || ticket.ticket_type_id === null
+    );
+    
+    console.log('Assignment Status Check:', {
+      total: ticketDetails.length,
+      assigned: assignedTickets.length,
+      unassigned: unassignedTickets.length,
+      sampleTicket: ticketDetails[0]
+    });
+    
+    if (assignedTickets.length > 0 && unassignedTickets.length > 0) {
+      return { 
+        type: 'mixed', 
+        assignedCount: assignedTickets.length, 
+        unassignedCount: unassignedTickets.length 
+      };
+    } else if (assignedTickets.length > 0) {
+      return { type: 'assigned', count: assignedTickets.length };
+    } else if (unassignedTickets.length > 0) {
+      return { type: 'unassigned', count: unassignedTickets.length };
+    }
+    
+    return { type: 'none', count: 0 };
+  };
+
   // Update the handleValidateTicket function to prevent errors
   const handleValidateTicket = async () => {
     if (!baseUrl) {
@@ -444,37 +478,103 @@ const AccountantScan = () => {
     setTicketCounts({ ...ticketCounts, [typeId]: current + 1 });
   };
 
+  // MODIFIED: Enhanced handleAssign function
   const handleAssign = async () => {
     if (!baseUrl) {
       notify.error("API configuration not available");
       return;
     }
 
-    const totalAssigned = Object.values(ticketCounts).reduce((sum, v) => sum + parseInt(v || 0), 0);
-    if (totalAssigned !== ticketIds.length) {
-      notify.error("Assigned count must match number of added ticket IDs");
+    const assignmentStatus = getAssignmentStatus();
+    
+    // Handle unassignment
+    if (assignmentStatus.type === 'assigned') {
+      const confirmed = await new Promise(resolve => {
+        confirmToast(
+          `Are you sure you want to unassign ${assignmentStatus.count} tickets? This will remove their ticket type assignments.`,
+          () => resolve(true),
+          () => resolve(false)
+        );
+      });
+
+      if (!confirmed) return;
+
+      try {
+        const assignedTicketIds = ticketDetails
+          .filter(ticket => ticket.ticket_type_id)
+          .map(ticket => ticket.id);
+
+        const unassignments = assignedTicketIds.map(id => ({
+          id: id,
+          ticket_type_id: null
+        }));
+
+        await axios.patch(`${baseUrl}/api/tickets/tickets/assign-types`, { 
+          assignments: unassignments 
+        });
+        
+        notify.success(`${assignedTicketIds.length} tickets unassigned successfully!`);
+        
+        // Refresh ticket details to show updated status
+        const updatedDetails = await Promise.all(
+          ticketIds.map(async (id) => {
+            try {
+              const { data } = await axios.get(`${baseUrl}/api/tickets/ticket/${id}`);
+              return data;
+            } catch (error) {
+              console.error(`Failed to refresh ticket ${id}:`, error);
+              return ticketDetails.find(t => t.id === id); // Fallback to current data
+            }
+          })
+        );
+        
+        setTicketDetails(updatedDetails);
+        setTicketCounts({});
+        setSelectorOpen(false);
+        setShowSummary(false);
+        
+      } catch (error) {
+        console.error("Unassignment error:", error);
+        notify.error("Failed to unassign tickets");
+      }
       return;
     }
 
-    const assignments = [];
-    let index = 0;
-    for (const [typeId, count] of Object.entries(ticketCounts)) {
-      for (let i = 0; i < count; i++) {
-        assignments.push({ id: ticketIds[index], ticket_type_id: parseInt(typeId) });
-        index++;
-      }
+    // Handle mixed assignment (show warning)
+    if (assignmentStatus.type === 'mixed') {
+      notify.warning(`You have both assigned (${assignmentStatus.assignedCount}) and unassigned (${assignmentStatus.unassignedCount}) tickets. Please clear the list and add only tickets of the same type.`);
+      return;
     }
 
-    try {
-      await axios.patch(`${baseUrl}/api/tickets/tickets/assign-types`, { assignments });
-      notify.success("Tickets assigned!");
-      setTicketIds([]);
-      setTicketDetails([]);
-      setTicketCounts({});
-      setSelectorOpen(false);
-      setShowSummary(false);
-    } catch (e) {
-      notify.error("Assignment failed");
+    // Handle normal assignment
+    if (assignmentStatus.type === 'unassigned') {
+      const totalAssigned = Object.values(ticketCounts).reduce((sum, v) => sum + parseInt(v || 0), 0);
+      if (totalAssigned !== ticketIds.length) {
+        notify.error("Assigned count must match number of added ticket IDs");
+        return;
+      }
+
+      const assignments = [];
+      let index = 0;
+      for (const [typeId, count] of Object.entries(ticketCounts)) {
+        for (let i = 0; i < count; i++) {
+          assignments.push({ id: ticketIds[index], ticket_type_id: parseInt(typeId) });
+          index++;
+        }
+      }
+
+      try {
+        await axios.patch(`${baseUrl}/api/tickets/tickets/assign-types`, { assignments });
+        notify.success("Tickets assigned successfully!");
+        setTicketIds([]);
+        setTicketDetails([]);
+        setTicketCounts({});
+        setSelectorOpen(false);
+        setShowSummary(false);
+      } catch (error) {
+        console.error("Assignment error:", error);
+        notify.error("Assignment failed");
+      }
     }
   };
 
@@ -887,14 +987,46 @@ const AccountantScan = () => {
               {ticketIds.length > 0 && (
                 <Box sx={{ display: 'flex', gap: 2, mt: 2 }}>
                   {mode === "assign" ? (
-                    <Button
-                      variant="contained"
-                      color="primary"
-                      fullWidth
-                      onClick={() => setSelectorOpen(true)}
-                    >
-                      Assign Ticket Types ({ticketIds.length} tickets)
-                    </Button>
+                    (() => {
+                      const assignmentStatus = getAssignmentStatus();
+                      let buttonText = "Assign Ticket Types";
+                      let buttonColor = "primary";
+                      let buttonAction = () => setSelectorOpen(true);
+                      
+                      if (assignmentStatus.type === 'assigned') {
+                        buttonText = `Unassign ${assignmentStatus.count} Tickets`;
+                        buttonColor = "warning";
+                        buttonAction = handleAssign; // Direct unassignment
+                      } else if (assignmentStatus.type === 'mixed') {
+                        buttonText = `Mixed Assignment (${assignmentStatus.assignedCount} assigned, ${assignmentStatus.unassignedCount} unassigned)`;
+                        buttonColor = "error";
+                        buttonAction = () => notify.warning("Please clear the list and add only tickets of the same assignment status");
+                      } else if (assignmentStatus.type === 'unassigned') {
+                        buttonText = `Assign ${assignmentStatus.count} Tickets`;
+                        buttonColor = "primary";
+                        buttonAction = () => setSelectorOpen(true);
+                      }
+                      
+                      return (
+                        <Button
+                          variant="contained"
+                          color={buttonColor}
+                          fullWidth
+                          onClick={buttonAction}
+                          disabled={assignmentStatus.type === 'none'}
+                          sx={{
+                            '&.MuiButton-containedWarning': {
+                              backgroundColor: '#ff9800',
+                              '&:hover': {
+                                backgroundColor: '#f57c00',
+                              }
+                            }
+                          }}
+                        >
+                          {buttonText}
+                        </Button>
+                      );
+                    })()
                   ) : null}
                   <Button
                     variant="outlined"
@@ -908,9 +1040,17 @@ const AccountantScan = () => {
               )}
             </Paper>
 
+            {/* MODIFIED: Dynamic Dialog title and content */}
             <Dialog open={selectorOpen} onClose={() => setSelectorOpen(false)} fullWidth maxWidth="md">
               <DialogTitle>
-                Assign Ticket Counts by Category ({ticketIds.length} tickets total)
+                {(() => {
+                  const assignmentStatus = getAssignmentStatus();
+                  if (assignmentStatus.type === 'assigned') {
+                    return `Unassign ${assignmentStatus.count} Tickets`;
+                  } else {
+                    return `Assign Ticket Counts by Category (${ticketIds.length} tickets total)`;
+                  }
+                })()}
               </DialogTitle>
               <Box p={3}>
                 {Object.entries(groupedTypes).map(([category, subtypes]) => (
