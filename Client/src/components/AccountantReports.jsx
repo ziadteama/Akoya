@@ -32,6 +32,7 @@ import { saveAs } from "file-saver";
 import OrdersTable from "./OrdersTable";
 import { notify } from '../utils/toast';
 import CategorySalesReport from './CategorySalesReport';
+import CreditReport from './CreditReport';
 
 // Update dayjs locale configuration for DD/MM/YYYY format
 dayjs.locale({
@@ -55,6 +56,7 @@ const AccountantReports = () => {
   const [reportData, setReportData] = useState([]);
   const [ticketsReportData, setTicketsReportData] = useState(null);
   const [categorySalesData, setCategorySalesData] = useState(null);
+  const [creditReportData, setCreditReportData] = useState(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
   const [summary, setSummary] = useState({ totalTickets: 0, totalRevenue: 0 });
@@ -68,6 +70,14 @@ const AccountantReports = () => {
 
   const handleModeChange = (event, newMode) => {
     if (newMode !== null) {
+      // Clear all report data when switching modes
+      setReportData([]);
+      setTicketsReportData(null);
+      setCategorySalesData(null);
+      setCreditReportData(null);
+      setSummary({ totalTickets: 0, totalRevenue: 0, totalDiscounts: 0 });
+      setError(null);
+      
       setReportMode(newMode);
     }
   };
@@ -216,32 +226,20 @@ const AccountantReports = () => {
     }
   };
 
-  // Modified useEffect to handle both report types
+  // Modified useEffect to handle report fetching properly
   useEffect(() => {
-    // Clear previous data when switching modes to prevent showing stale data
-    if (reportMode === 'category-sales') {
-      setCategorySalesData(null);
-      // Force a refresh for category sales
-      const timer = setTimeout(() => {
-        // This will trigger the CategorySalesReport component to fetch new data
-        setCategorySalesData(null);
-      }, 100);
-      return () => clearTimeout(timer);
-    } else if (reportMode === 'tickets') {
-      setTicketsReportData(null);
-      const timer = setTimeout(() => {
-        fetchTicketsReport();
-      }, 500);
-      return () => clearTimeout(timer);
-    } else if (reportMode === 'orders') {
-      setReportData([]);
-      setSummary({ totalTickets: 0, totalRevenue: 0, totalDiscounts: 0 });
-      const timer = setTimeout(() => {
+    const timer = setTimeout(() => {
+      if (reportMode === 'orders' && !reportData.length) {
         fetchOrdersReport();
-      }, 500);
-      return () => clearTimeout(timer);
-    }
-  }, [selectedDate, fromDate, toDate, useRange, baseUrl, reportMode]);
+      } else if (reportMode === 'tickets' && !ticketsReportData) {
+        fetchTicketsReport();
+      } 
+      // For category-sales and credit-report, let their components handle their own fetching
+      // when their data is null (which we set in handleModeChange)
+    }, 300);
+    
+    return () => clearTimeout(timer);
+  }, [selectedDate, fromDate, toDate, useRange, reportMode]);
 
   // Add a separate useEffect to watch for categorySalesData changes and update bottom bar
   useEffect(() => {
@@ -545,12 +543,16 @@ const AccountantReports = () => {
   const handleRefresh = () => {
     setError(null);
     if (reportMode === 'orders') {
+      setReportData([]);
+      setSummary({ totalTickets: 0, totalRevenue: 0, totalDiscounts: 0 });
       fetchOrdersReport();
     } else if (reportMode === 'tickets') {
+      setTicketsReportData(null);
       fetchTicketsReport();
     } else if (reportMode === 'category-sales') {
-      // Force a refresh of category sales data
       setCategorySalesData(null);
+    } else if (reportMode === 'credit-report') {
+      setCreditReportData(null);
     }
   };
 
@@ -789,7 +791,7 @@ const AccountantReports = () => {
                         <Box mt={1}>
                           {tickets.map((ticket, index) => (
                             <Typography key={index} variant="caption" display="block" color="textSecondary">
-                              {ticket.quantity}x @ EGP {parseFloat(ticket.unit_price).toFixed(0)}
+                              {ticket.quantity}x @ EGP {parseFloat(ticket.sold_price).toFixed(0)}
                             </Typography>
                           ))}
                         </Box>
@@ -1581,6 +1583,7 @@ const AccountantReports = () => {
               <ToggleButton value="orders">📋 Orders</ToggleButton>
               <ToggleButton value="tickets">🎟️ Tickets</ToggleButton>
               <ToggleButton value="category-sales">📊 Category Sales</ToggleButton>
+              <ToggleButton value="credit-report">💳 Credit Report</ToggleButton>
             </ToggleButtonGroup>
           </Box>
 
@@ -1677,7 +1680,7 @@ const AccountantReports = () => {
             <Box sx={{ 
               flex: 1,
               overflow: "auto",
-              p: reportMode === 'tickets' || reportMode === 'category-sales' ? 0 : 0
+              p: reportMode === 'tickets' || reportMode === 'category-sales' || reportMode === 'credit-report' ? 0 : 0
             }}>
               {loading ? (
                 <Box display="flex" justifyContent="center" alignItems="center" height="100%">
@@ -1734,6 +1737,20 @@ const AccountantReports = () => {
                   setError={setError}
                   categorySalesData={categorySalesData}
                   setCategorySalesData={setCategorySalesData}
+                />
+              ) : reportMode === 'credit-report' ? (
+                <CreditReport
+                  selectedDate={selectedDate}
+                  fromDate={fromDate}
+                  toDate={toDate}
+                  useRange={useRange}
+                  formatApiDate={formatApiDate}
+                  loading={loading}
+                  setLoading={setLoading}
+                  error={error}
+                  setError={setError}
+                  creditReportData={creditReportData}
+                  setCreditReportData={setCreditReportData}
                 />
               ) : null}
             </Box>
@@ -1909,6 +1926,38 @@ const AccountantReports = () => {
                 <Box display="flex" justifyContent="center" alignItems="center">
                   <Typography variant="body1" color="textSecondary" sx={{ fontSize: '1.1rem' }}>
                     📊 {loading ? 'Loading Category Sales Report...' : 'No category sales data available'}
+                  </Typography>
+                </Box>
+              )
+            ) : reportMode === 'credit-report' ? (
+              creditReportData && creditReportData.summary ? (
+                <Grid container spacing={2} alignItems="center">
+                  <Grid item xs={12} md={8}>
+                    <Box display="flex" gap={4} justifyContent={{ xs: "center", md: "flex-start" }} flexWrap="wrap">
+                      <Typography variant="body1" sx={{ fontWeight: 700, color: "#00AEEF", fontSize: '1.1rem' }}>
+                        <b>💳 Credit Accounts:</b> {creditReportData.summary.total_accounts}
+                      </Typography>
+                      <Typography variant="body1" sx={{ fontWeight: 700, color: "#00AEEF", fontSize: '1.1rem' }}>
+                        <b>🎟️ Credit Transactions:</b> {creditReportData.summary.total_transactions}
+                      </Typography>
+                      <Typography variant="body1" sx={{ fontWeight: 700, color: "#00AEEF", fontSize: '1.1rem' }}>
+                        <b>💰 Total Credit Used:</b> EGP {creditReportData.summary.total_credit_used.toFixed(2)}
+                      </Typography>
+                      <Typography variant="body1" sx={{ fontWeight: 700, color: "#4CAF50", fontSize: '1.1rem' }}>
+                        <b>🏦 Total Balance:</b> EGP {creditReportData.summary.total_current_balance.toFixed(2)}
+                      </Typography>
+                    </Box>
+                  </Grid>
+                  <Grid item xs={12} md={4} display="flex" justifyContent="center" gap={1}>
+                    <Typography variant="body2" color="textSecondary" sx={{ fontSize: '0.9rem', textAlign: 'center' }}>
+                      💳 Credit account filtering and CSV export available in report above
+                    </Typography>
+                  </Grid>
+                </Grid>
+              ) : (
+                <Box display="flex" justifyContent="center" alignItems="center">
+                  <Typography variant="body1" color="textSecondary" sx={{ fontSize: '1.1rem' }}>
+                    💳 {loading ? 'Loading Credit Report...' : 'No credit data available'}
                   </Typography>
                 </Box>
               )

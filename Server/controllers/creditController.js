@@ -236,30 +236,55 @@ export const unlinkCategoryFromCredit = async (req, res) => {
 export const getCreditTransactions = async (req, res) => {
   try {
     const { accountId } = req.params;
-    const { page = 1, limit = 50 } = req.query;
+    const { page = 1, limit = 20, startDate, endDate, date } = req.query;
     
     const offset = (page - 1) * limit;
     
-    const query = `
-      SELECT 
-        ct.*,
-        ca.name as account_name,
-        o.id as order_number
-      FROM credit_transactions ct
-      LEFT JOIN credit_accounts ca ON ct.credit_account_id = ca.id
-      LEFT JOIN orders o ON ct.order_id = o.id
-      WHERE ct.credit_account_id = $1
-      ORDER BY ct.created_at DESC 
-      LIMIT $2 OFFSET $3
+    // Build date filter and parameters correctly
+    let dateFilter = '';
+    let params = [accountId];
+    
+    if (startDate && endDate) {
+      dateFilter = 'AND DATE(ct.created_at) BETWEEN $2 AND $3';
+      params.push(startDate, endDate);
+    } else if (date) {
+      dateFilter = 'AND DATE(ct.created_at) = $2';
+      params.push(date);
+    }
+    
+    // Add limit and offset to params
+    params.push(limit, offset);
+    const limitParam = `$${params.length - 1}`;
+    const offsetParam = `$${params.length}`;
+    
+   // In the getCreditTransactions function, modify the query to cast amount as numeric:
+
+const query = `
+  SELECT 
+    ct.*,
+    CAST(ct.amount AS DECIMAL(10,2)) as amount,  -- Ensure amount is numeric
+    ca.name as account_name,
+    o.id as order_number
+  FROM credit_transactions ct
+  LEFT JOIN credit_accounts ca ON ct.credit_account_id = ca.id
+  LEFT JOIN orders o ON ct.order_id = o.id  
+  WHERE ct.credit_account_id = $1 ${dateFilter}
+  ORDER BY ct.created_at DESC 
+  LIMIT ${limitParam} OFFSET ${offsetParam}
+`;
+    const { rows } = await pool.query(query, params);
+    
+    // Get total count with same date filter
+    const countQuery = `
+      SELECT COUNT(*) as total 
+      FROM credit_transactions ct 
+      WHERE ct.credit_account_id = $1 ${dateFilter}
     `;
     
-    const { rows } = await pool.query(query, [accountId, limit, offset]);
+    // Use same params as main query but without limit/offset
+    const countParams = params.slice(0, -2);
     
-    // Get total count
-    const countResult = await pool.query(
-      'SELECT COUNT(*) as total FROM credit_transactions WHERE credit_account_id = $1',
-      [accountId]
-    );
+    const countResult = await pool.query(countQuery, countParams);
     
     res.json({
       transactions: rows,
@@ -273,7 +298,11 @@ export const getCreditTransactions = async (req, res) => {
     
   } catch (error) {
     console.error('Error fetching credit transactions:', error);
-    res.status(500).json({ error: 'Failed to fetch credit transactions' });
+    console.error('Error details:', error.message);
+    res.status(500).json({ 
+      error: 'Failed to fetch credit transactions',
+      details: error.message 
+    });
   }
 };
 
@@ -395,5 +424,121 @@ export const processTicketSaleCredit = async (orderId, tickets, client) => {
   } catch (error) {
     console.error('Error processing ticket sale credit:', error);
     throw error;
+  }
+};
+
+// Get credit report
+export const getCreditReport = async (req, res) => {
+  try {
+    const { startDate, endDate, date } = req.query;
+    
+    let dateFilter = '';
+    const params = [];
+    
+    // Handle date filtering
+    if (startDate && endDate) {
+      dateFilter = 'AND DATE(ct.created_at) BETWEEN $1 AND $2';
+      params.push(startDate, endDate);
+    } else if (date) {
+      dateFilter = 'AND DATE(ct.created_at) = $1';
+      params.push(date);
+    }
+    
+    // Get all credit accounts with their details
+    const accountsQuery = `
+      SELECT 
+        ca.id,
+        ca.name,
+        ca.balance,
+        ca.description,
+        ca.created_at,
+        ca.updated_at,
+        COALESCE(
+          JSON_AGG(
+            DISTINCT cca.category_name
+          ) FILTER (WHERE cca.category_name IS NOT NULL),
+          '[]'::json
+        ) as linked_categories,
+        COALESCE(
+          SUM(
+            CASE 
+              WHEN ct.transaction_type = 'ticket_sale' AND ct.amount < 0 ${dateFilter.replace('AND', 'AND')}
+              THEN ABS(ct.amount)
+              ELSE 0 
+            END
+          ), 0
+        ) as credit_used_in_period,
+        COUNT(
+          CASE 
+            WHEN ct.id IS NOT NULL ${dateFilter.replace('AND', 'AND')}
+            THEN 1 
+            ELSE NULL 
+          END
+        ) as transactions_in_period
+      FROM credit_accounts ca
+      LEFT JOIN category_credit_accounts cca ON ca.id = cca.credit_account_id
+      LEFT JOIN credit_transactions ct ON ca.id = ct.credit_account_id
+      GROUP BY ca.id, ca.name, ca.balance, ca.description, ca.created_at, ca.updated_at
+      ORDER BY ca.balance DESC, ca.name
+    `;
+    
+    const { rows: accounts } = await pool.query(accountsQuery, params);
+    
+    // Calculate summary statistics
+    const summary = {
+      total_accounts: accounts.length,
+      total_current_balance: accounts.reduce((sum, acc) => sum + parseFloat(acc.balance), 0),
+      total_credit_used: accounts.reduce((sum, acc) => sum + parseFloat(acc.credit_used_in_period), 0),
+      total_transactions: accounts.reduce((sum, acc) => sum + parseInt(acc.transactions_in_period), 0),
+      accounts_in_debt: accounts.filter(acc => acc.balance < 0).length,
+      accounts_with_surplus: accounts.filter(acc => acc.balance > 0).length,
+      accounts_neutral: accounts.filter(acc => acc.balance === 0).length
+    };
+    
+    // Get period-specific transaction details if needed
+    const transactionsSummaryQuery = `
+      SELECT 
+        ca.id as account_id,
+        ca.name as account_name,
+        COUNT(ct.id) as transaction_count,
+        COALESCE(SUM(CASE WHEN ct.amount > 0 THEN ct.amount ELSE 0 END), 0) as total_credits,
+        COALESCE(SUM(CASE WHEN ct.amount < 0 THEN ABS(ct.amount) ELSE 0 END), 0) as total_debits,
+        COALESCE(SUM(ct.amount), 0) as net_change
+      FROM credit_accounts ca
+      LEFT JOIN credit_transactions ct ON ca.id = ct.credit_account_id
+      WHERE 1=1 ${dateFilter}
+      GROUP BY ca.id, ca.name
+      ORDER BY ca.name
+    `;
+    
+    const { rows: transactionsSummary } = await pool.query(transactionsSummaryQuery, params);
+    
+    res.json({
+      summary,
+      accounts: accounts.map(account => ({
+        ...account,
+        balance: parseFloat(account.balance),
+        credit_used_in_period: parseFloat(account.credit_used_in_period),
+        transactions_in_period: parseInt(account.transactions_in_period),
+        linked_categories: account.linked_categories || []
+      })),
+      transactions_summary: transactionsSummary.map(ts => ({
+        ...ts,
+        total_credits: parseFloat(ts.total_credits),
+        total_debits: parseFloat(ts.total_debits),
+        net_change: parseFloat(ts.net_change),
+        transaction_count: parseInt(ts.transaction_count)
+      })),
+      report_generated: new Date().toISOString(),
+      period: {
+        start: startDate || date || 'All time',
+        end: endDate || date || 'Present',
+        is_range: !!(startDate && endDate)
+      }
+    });
+    
+  } catch (error) {
+    console.error('Error generating credit report:', error);
+    res.status(500).json({ error: 'Failed to generate credit report', details: error.message });
   }
 };

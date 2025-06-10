@@ -78,7 +78,7 @@ const CategorySalesReport = ({
   };
 
   const exportCategorySalesCSV = () => {
-    if (!categorySalesData || categorySalesData.categories.length === 0) {
+    if (!categorySalesData || !categorySalesData.categories) {
       notify.warning("No category sales data to export");
       return;
     }
@@ -92,113 +92,70 @@ const CategorySalesReport = ({
       return str;
     };
 
-    // Filter data based on selected category
-    const filteredData = selectedCategoryFilter === 'all' 
-      ? categorySalesData.categories 
-      : categorySalesData.categories.filter(item => item.category === selectedCategoryFilter);
-
-    if (filteredData.length === 0) {
-      notify.warning("No data for selected category filter");
-      return;
-    }
-
     let csvContent = "\uFEFF";
-    
-    // Header
-    const reportTitle = selectedCategoryFilter === 'all' 
-      ? 'Category Sales Report - All Categories'
-      : `Category Sales Report - ${selectedCategoryFilter} Category Only`;
-    
     csvContent += useRange
-      ? `${reportTitle} from ${formatDisplayDate(fromDate)} to ${formatDisplayDate(toDate)}\r\n\r\n`
-      : `${reportTitle} for ${formatDisplayDate(selectedDate)}\r\n\r\n`;
+      ? `Category Sales Report from ${formatDisplayDate(fromDate)} to ${formatDisplayDate(toDate)}\r\n\r\n`
+      : `Category Sales Report for ${formatDisplayDate(selectedDate)}\r\n\r\n`;
 
-    // Calculate category breakdown with payment totals
-    const categoryBreakdown = {};
-    filteredData.forEach(item => {
-      if (!categoryBreakdown[item.category]) {
-        categoryBreakdown[item.category] = {
-          subcategories: [],
-          totalTickets: 0,
-          totalRevenue: 0,
-          paymentMethods: {}
-        };
-      }
-      
-      categoryBreakdown[item.category].subcategories.push(item);
-      categoryBreakdown[item.category].totalTickets += parseInt(item.tickets_sold);
-      categoryBreakdown[item.category].totalRevenue += parseFloat(item.category_revenue);
-      
-      // Aggregate payment methods for the entire category
-      if (item.payment_summary) {
-        Object.entries(item.payment_summary).forEach(([method, amount]) => {
-          const mappedMethod = mapPaymentMethod(method);
-          if (mappedMethod && mappedMethod !== 'غير محدد') {
-            categoryBreakdown[item.category].paymentMethods[mappedMethod] = 
-              (categoryBreakdown[item.category].paymentMethods[mappedMethod] || 0) + parseFloat(amount || 0);
-          }
-        });
-      }
-    });
-
-    // Summary Section
-    const filteredSummary = {
-      total_tickets_sold: Object.values(categoryBreakdown).reduce((sum, cat) => sum + cat.totalTickets, 0),
-      total_revenue: Object.values(categoryBreakdown).reduce((sum, cat) => sum + cat.totalRevenue, 0),
-      categories_count: Object.keys(categoryBreakdown).length,
-      subcategories_count: filteredData.length
-    };
-
-    csvContent += `EXECUTIVE SUMMARY\r\n`;
-    csvContent += `Report Generated,${new Date().toLocaleString()}\r\n`;
-    csvContent += `Date Range,"${useRange ? `${formatDisplayDate(fromDate)} to ${formatDisplayDate(toDate)}` : formatDisplayDate(selectedDate)}"\r\n`;
-    csvContent += `Filter Applied,${selectedCategoryFilter === 'all' ? 'All Categories' : selectedCategoryFilter + ' Category Only'}\r\n`;
-    csvContent += `Total Categories,${filteredSummary.categories_count}\r\n`;
-    csvContent += `Total Subcategories,${filteredSummary.subcategories_count}\r\n`;
-    csvContent += `Total Tickets Sold,${filteredSummary.total_tickets_sold}\r\n`;
-    csvContent += `Total Revenue (EGP),${filteredSummary.total_revenue.toFixed(2)}\r\n`;
+    // Summary section
+    csvContent += `SUMMARY\r\n`;
+    csvContent += `Total Categories,${categorySalesData.summary.categories_count}\r\n`;
+    csvContent += `Total Tickets Sold,${categorySalesData.summary.total_tickets_sold}\r\n`;
+    csvContent += `Total Revenue (EGP),${categorySalesData.summary.total_revenue.toFixed(2)}\r\n`;
+    if (categorySalesData.summary.total_payments_verification) {
+      csvContent += `Total Payments Verification (EGP),${categorySalesData.summary.total_payments_verification.toFixed(2)}\r\n`;
+    }
     csvContent += `\r\n`;
 
-    // Category breakdown with payment methods
-    csvContent += `CATEGORY BREAKDOWN WITH PAYMENT TOTALS\r\n`;
-    Object.entries(categoryBreakdown)
-      .sort(([,a], [,b]) => b.totalRevenue - a.totalRevenue)
-      .forEach(([category, data]) => {
-        csvContent += `\r\n${category.toUpperCase()} CATEGORY\r\n`;
-        csvContent += `Total Revenue: EGP ${data.totalRevenue.toFixed(2)} | Total Tickets: ${data.totalTickets}\r\n`;
-        
-        // Payment methods for entire category
-        csvContent += `PAYMENT METHODS FOR ${category.toUpperCase()}:\r\n`;
-        csvContent += `Method,Amount (EGP),Percentage\r\n`;
-        Object.entries(data.paymentMethods)
-          .sort(([,a], [,b]) => b - a)
-          .forEach(([method, amount]) => {
-            const percentage = ((amount / data.totalRevenue) * 100).toFixed(1);
-            csvContent += `${method},${amount.toFixed(2)},${percentage}%\r\n`;
-          });
-        
-        // Subcategories breakdown
-        csvContent += `\r\nSUBCATEGORIES IN ${category.toUpperCase()}:\r\n`;
-        csvContent += `Subcategory,Unit Price (EGP),Tickets Sold,Revenue (EGP),% of Category,Orders Count\r\n`;
-        data.subcategories
-          .sort((a, b) => parseFloat(b.category_revenue) - parseFloat(a.category_revenue))
-          .forEach(item => {
-            const percentageOfCategory = ((parseFloat(item.category_revenue) / data.totalRevenue) * 100).toFixed(1);
-            csvContent += `${escapeCSV(item.subcategory)},${parseFloat(item.unit_price).toFixed(2)},${item.tickets_sold},${parseFloat(item.category_revenue).toFixed(2)},${percentageOfCategory}%,${item.orders_count}\r\n`;
-          });
-        
-        csvContent += `${category.toUpperCase()} TOTAL,,${data.totalTickets},${data.totalRevenue.toFixed(2)},100.0%,\r\n`;
-      });
+    // Category details header
+    csvContent += `CATEGORY BREAKDOWN\r\n`;
+    csvContent += `Category Name,Tickets Sold,Revenue (EGP),Linked Categories\r\n`;
 
-    // Generate filename
-    const categoryPart = selectedCategoryFilter === 'all' ? 'All_Categories' : selectedCategoryFilter.replace(/\s+/g, '_');
+    // Process each category
+    categorySalesData.categories.forEach(category => {
+      // FIX: Handle multiple linked categories by separating them with semicolons instead of commas
+      const linkedCategoriesText = category.linked_categories && category.linked_categories.length > 0
+        ? category.linked_categories.map(linkedCat => linkedCat.category_name).join('; ') // Use semicolon separator
+        : 'None';
+
+      csvContent += `${escapeCSV(category.category_name)},${category.tickets_sold},${category.total_revenue.toFixed(2)},${escapeCSV(linkedCategoriesText)}\r\n`;
+    });
+
+    // Subcategory breakdown if available
+    if (categorySalesData.categories.some(cat => cat.subcategories && cat.subcategories.length > 0)) {
+      csvContent += `\r\nSUBCATEGORY BREAKDOWN\r\n`;
+      csvContent += `Category,Subcategory,Tickets Sold,Revenue (EGP)\r\n`;
+
+      categorySalesData.categories.forEach(category => {
+        if (category.subcategories && category.subcategories.length > 0) {
+          category.subcategories.forEach(sub => {
+            csvContent += `${escapeCSV(category.category_name)},${escapeCSV(sub.subcategory)},${sub.tickets_sold},${sub.total_revenue.toFixed(2)}\r\n`;
+          });
+        }
+      });
+    }
+
+    // Credit account breakdown if available
+    if (categorySalesData.categories.some(cat => cat.credit_accounts && cat.credit_accounts.length > 0)) {
+      csvContent += `\r\nCREDIT ACCOUNT USAGE BREAKDOWN\r\n`;
+      csvContent += `Category,Credit Account Name,Tickets Purchased,Credit Used (EGP)\r\n`;
+
+      categorySalesData.categories.forEach(category => {
+        if (category.credit_accounts && category.credit_accounts.length > 0) {
+          category.credit_accounts.forEach(account => {
+            csvContent += `${escapeCSV(category.category_name)},${escapeCSV(account.account_name)},${account.tickets_purchased},${account.credit_used.toFixed(2)}\r\n`;
+          });
+        }
+      });
+    }
+
     const filename = useRange
-      ? `Category_Sales_${categoryPart}_${formatApiDate(fromDate)}_to_${formatApiDate(toDate)}.csv`
-      : `Category_Sales_${categoryPart}_${formatApiDate(selectedDate)}.csv`;
+      ? `Category_Sales_${formatApiDate(fromDate)}_to_${formatApiDate(toDate)}.csv`
+      : `Category_Sales_${formatApiDate(selectedDate)}.csv`;
 
     const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" });
     saveAs(blob, filename);
-    notify.success(`Category sales CSV exported successfully!`);
+    notify.success("Category Sales CSV exported successfully!");
   };
 
   const fetchCategorySalesReport = async (shouldFetch = true) => {

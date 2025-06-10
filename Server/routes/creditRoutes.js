@@ -7,7 +7,8 @@ import {
   unlinkCategoryFromCredit,
   getCreditTransactions,
   getAvailableCategories,
-  getAllLinkedCategories
+  getAllLinkedCategories,
+  getCreditReport
 } from '../controllers/creditController.js';
 
 const router = express.Router();
@@ -67,5 +68,12 @@ router.get('/categories/available', getAvailableCategories);
  * @access Private
  */
 router.get('/categories/linked', getAllLinkedCategories);
+
+/**
+ * @route GET /credit-report
+ * @desc Generate a report of credit account activity
+ * @access Private
+ */
+router.get('/credit-report', getCreditReport);
 
 export default router;
