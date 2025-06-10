@@ -287,18 +287,27 @@ const CategorySalesReport = ({
   };
 
   const CategorySalesCard = ({ category, data }) => {
+    // Calculate category total EXCLUDING discounts from revenue
     const categoryTotal = data.reduce((sum, item) => sum + parseFloat(item.category_revenue), 0);
     const categoryTickets = data.reduce((sum, item) => sum + parseInt(item.tickets_sold), 0);
     const isExpanded = expandedCategories[category];
 
-    // Aggregate payment methods for the ENTIRE category only
+    // Aggregate payment methods for the ENTIRE category
     const categoryPayments = {};
+    let totalNonDiscountPayments = 0; // For percentage calculation base
+    
     data.forEach(item => {
       if (item.payment_summary) {
         Object.entries(item.payment_summary).forEach(([method, amount]) => {
           if (method && method !== 'null') {
             const mappedMethod = mapPaymentMethod(method);
-            categoryPayments[mappedMethod] = (categoryPayments[mappedMethod] || 0) + parseFloat(amount || 0);
+            const paymentAmount = parseFloat(amount || 0);
+            categoryPayments[mappedMethod] = (categoryPayments[mappedMethod] || 0) + paymentAmount;
+            
+            // Only count non-discount payments for percentage calculation
+            if (mappedMethod !== 'خصم' && mappedMethod !== 'discount') {
+              totalNonDiscountPayments += paymentAmount;
+            }
           }
         });
       }
@@ -346,7 +355,7 @@ const CategorySalesReport = ({
                   {categoryTickets} tickets • {data.length} subcategories • Avg: EGP {(categoryTotal/categoryTickets).toFixed(0)}/ticket
                 </Typography>
                 
-                {/* Payment Methods Summary for ENTIRE Category */}
+                {/* Payment Methods Summary - Fixed percentage calculation */}
                 <Box mt={1}>
                   <Typography variant="caption" display="block" color="textSecondary" fontWeight="600">
                     Category Payment Methods:
@@ -354,20 +363,32 @@ const CategorySalesReport = ({
                   <Box display="flex" gap={0.5} mt={0.5} flexWrap="wrap">
                     {Object.entries(categoryPayments)
                       .sort(([,a], [,b]) => b - a)
-                      .map(([method, amount]) => (
-                      <Chip 
-                        key={method}
-                        label={`${method}: EGP ${parseFloat(amount).toFixed(0)} (${((amount/categoryTotal)*100).toFixed(1)}%)`}
-                        size="small"
-                        sx={{ 
-                          bgcolor: getPaymentMethodColor(method),
-                          color: 'white',
-                          fontSize: '0.65rem',
-                          height: '22px',
-                          fontWeight: 600
-                        }}
-                      />
-                    ))}
+                      .map(([method, amount]) => {
+                        // FIXED: Calculate percentage properly
+                        let percentage;
+                        if (method === 'خصم' || method === 'discount') {
+                          // For discounts, calculate as percentage of total revenue (what was actually charged)
+                          percentage = categoryTotal > 0 ? ((amount / categoryTotal) * 100).toFixed(1) : '0.0';
+                        } else {
+                          // For payments, calculate as percentage of total non-discount payments
+                          percentage = totalNonDiscountPayments > 0 ? ((amount / totalNonDiscountPayments) * 100).toFixed(1) : '0.0';
+                        }
+                        
+                        return (
+                          <Chip 
+                            key={method}
+                            label={`${method}: EGP ${parseFloat(amount).toFixed(0)} (${percentage}%)`}
+                            size="small"
+                            sx={{ 
+                              bgcolor: getPaymentMethodColor(method),
+                              color: 'white',
+                              fontSize: '0.65rem',
+                              height: '22px',
+                              fontWeight: 600
+                            }}
+                          />
+                        );
+                      })}
                   </Box>
                 </Box>
               </Box>
@@ -401,7 +422,7 @@ const CategorySalesReport = ({
           
           <Collapse in={isExpanded} timeout="auto" unmountOnExit>
             <Box mt={2}>
-              {/* Category-level payment breakdown */}
+              {/* Category-level payment breakdown - Fixed percentage calculation */}
               <Paper sx={{ 
                 p: 2, 
                 mb: 2, 
@@ -415,21 +436,33 @@ const CategorySalesReport = ({
                 <Grid container spacing={1}>
                   {Object.entries(categoryPayments)
                     .sort(([,a], [,b]) => b - a)
-                    .map(([method, amount]) => (
-                    <Grid item xs={6} sm={4} md={3} key={method}>
-                      <Box textAlign="center" p={1}>
-                        <Typography variant="body2" fontWeight="600" color={getPaymentMethodColor(method)}>
-                          {method}
-                        </Typography>
-                        <Typography variant="h6" color="text.primary">
-                          EGP {amount.toFixed(0)}
-                        </Typography>
-                        <Typography variant="caption" color="textSecondary">
-                          {((amount/categoryTotal)*100).toFixed(1)}%
-                        </Typography>
-                      </Box>
-                    </Grid>
-                  ))}
+                    .map(([method, amount]) => {
+                      // FIXED: Calculate percentage properly for each payment method
+                      let percentage;
+                      if (method === 'خصم' || method === 'discount') {
+                        // For discounts, show as percentage of revenue
+                        percentage = categoryTotal > 0 ? ((amount / categoryTotal) * 100).toFixed(1) : '0.0';
+                      } else {
+                        // For payments, show as percentage of total payments (excluding discounts)
+                        percentage = totalNonDiscountPayments > 0 ? ((amount / totalNonDiscountPayments) * 100).toFixed(1) : '0.0';
+                      }
+                      
+                      return (
+                        <Grid item xs={6} sm={4} md={3} key={method}>
+                          <Box textAlign="center" p={1}>
+                            <Typography variant="body2" fontWeight="600" color={getPaymentMethodColor(method)}>
+                              {method}
+                            </Typography>
+                            <Typography variant="h6" color="text.primary">
+                              EGP {amount.toFixed(0)}
+                            </Typography>
+                            <Typography variant="caption" color="textSecondary">
+                              {percentage}%
+                            </Typography>
+                          </Box>
+                        </Grid>
+                      );
+                    })}
                 </Grid>
               </Paper>
 

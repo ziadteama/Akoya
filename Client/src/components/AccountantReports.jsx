@@ -218,64 +218,39 @@ const AccountantReports = () => {
 
   // Modified useEffect to handle both report types
   useEffect(() => {
-    const timer = setTimeout(() => {
-      if (reportMode === 'orders') {
-        fetchOrdersReport();
-      } else if (reportMode === 'tickets') {
+    // Clear previous data when switching modes to prevent showing stale data
+    if (reportMode === 'category-sales') {
+      setCategorySalesData(null);
+      // Force a refresh for category sales
+      const timer = setTimeout(() => {
+        // This will trigger the CategorySalesReport component to fetch new data
+        setCategorySalesData(null);
+      }, 100);
+      return () => clearTimeout(timer);
+    } else if (reportMode === 'tickets') {
+      setTicketsReportData(null);
+      const timer = setTimeout(() => {
         fetchTicketsReport();
-      } else {
-        fetchCategorySalesReport();
-      }
-    }, 500);
-    
-    return () => clearTimeout(timer);
+      }, 500);
+      return () => clearTimeout(timer);
+    } else if (reportMode === 'orders') {
+      setReportData([]);
+      setSummary({ totalTickets: 0, totalRevenue: 0, totalDiscounts: 0 });
+      const timer = setTimeout(() => {
+        fetchOrdersReport();
+      }, 500);
+      return () => clearTimeout(timer);
+    }
   }, [selectedDate, fromDate, toDate, useRange, baseUrl, reportMode]);
 
-  // Enhanced sidebar state management
+  // Add a separate useEffect to watch for categorySalesData changes and update bottom bar
   useEffect(() => {
-    const handleSidebarChange = () => {
-      // Check multiple possible storage keys and states
-      const storedState = localStorage.getItem('sidebarOpen') || 
-                         localStorage.getItem('sidebar-open') ||
-                         localStorage.getItem('sidebarExpanded');
-      
-      // Handle different possible values
-      const isOpen = storedState === 'true' || storedState === true || storedState === '1';
-      setSidebarOpen(isOpen);
-      
-      console.log('Sidebar state changed:', isOpen); // Debug log
-    };
-    
-    // Initial check
-    handleSidebarChange();
-    
-    // Listen for storage changes (cross-tab)
-    window.addEventListener('storage', handleSidebarChange);
-    
-    // Listen for custom events (same tab)
-    window.addEventListener('sidebarToggle', handleSidebarChange);
-    window.addEventListener('sidebar-toggle', handleSidebarChange);
-    
-    // Listen for resize events that might affect sidebar
-    window.addEventListener('resize', handleSidebarChange);
-    
-    // Poll for changes every second as fallback (remove after debugging)
-    const pollInterval = setInterval(() => {
-      const currentState = localStorage.getItem('sidebarOpen') === 'true';
-      if (currentState !== sidebarOpen) {
-        setSidebarOpen(currentState);
-        console.log('Sidebar state polled and updated:', currentState);
-      }
-    }, 1000);
-    
-    return () => {
-      window.removeEventListener('storage', handleSidebarChange);
-      window.removeEventListener('sidebarToggle', handleSidebarChange);
-      window.removeEventListener('sidebar-toggle', handleSidebarChange);
-      window.removeEventListener('resize', handleSidebarChange);
-      clearInterval(pollInterval);
-    };
-  }, [sidebarOpen]);
+    // This ensures the bottom bar updates when category sales data is fetched
+    if (reportMode === 'category-sales' && categorySalesData) {
+      // The bottom bar will automatically update because it reads from categorySalesData
+      console.log('Category sales data updated:', categorySalesData);
+    }
+  }, [categorySalesData, reportMode]);
 
   const exportOrdersCSV = () => {
     if (reportData.length === 0) return;

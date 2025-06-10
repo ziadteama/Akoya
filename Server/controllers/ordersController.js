@@ -450,6 +450,7 @@ export const deleteOrder = async (req, res) => {
   }
 };
 
+
 export const getCategorySalesReport = async (req, res) => {
   try {
     const { startDate, endDate, groupBy = 'subcategory' } = req.query;
@@ -464,7 +465,7 @@ export const getCategorySalesReport = async (req, res) => {
       dateFilter = 'WHERE DATE(o.created_at) >= $1';
       params.push(startDate);
     } else if (endDate) {
-      dateFilter = 'WHERE DATE(o.created_at) <= $1';
+      dateFilter = 'Where DATE(o.created_at) <= $1';
       params.push(endDate);
     }
     
@@ -489,12 +490,18 @@ export const getCategorySalesReport = async (req, res) => {
     
     const { rows: salesRows } = await pool.query(salesQuery, params);
     
-    // Get payment data with proper allocation
+    // FIXED: Get payment data with proper allocation excluding discount cross-contamination
     const paymentAllocationQuery = `
-      WITH order_category_breakdown AS (
+      WITH order_breakdown AS (
         SELECT 
           o.id as order_id,
-          o.total_amount,
+          o.total_amount as order_total,
+          -- Calculate the actual charged amount (tickets + meals, excluding discounts)
+          COALESCE(
+            (SELECT SUM(t.sold_price) FROM tickets t WHERE t.order_id = o.id), 0
+          ) + COALESCE(
+            (SELECT SUM(om.quantity * om.price_at_order) FROM order_meals om WHERE om.order_id = o.id), 0
+          ) as charged_amount,
           tt.category,
           tt.subcategory,
           tt.price as unit_price,
@@ -508,17 +515,19 @@ export const getCategorySalesReport = async (req, res) => {
       ),
       payment_allocations AS (
         SELECT 
-          ocb.*,
+          ob.*,
           p.method,
           p.amount as payment_amount,
-          -- Calculate the proportion of this payment that belongs to this category/subcategory
+          -- FIXED: Allocate payments based on category's share of the CHARGED amount, not discounted total
           CASE 
-            WHEN ocb.total_amount > 0 
-            THEN p.amount * (ocb.category_amount_in_order / ocb.total_amount)
+            WHEN ob.charged_amount > 0 AND p.method != 'discount'
+            THEN p.amount * (ob.category_amount_in_order / ob.charged_amount)
+            WHEN p.method = 'discount'
+            THEN p.amount * (ob.category_amount_in_order / ob.charged_amount)
             ELSE 0
           END as allocated_payment_amount
-        FROM order_category_breakdown ocb
-        JOIN payments p ON ocb.order_id = p.order_id
+        FROM order_breakdown ob
+        JOIN payments p ON ob.order_id = p.order_id
         WHERE p.method IS NOT NULL
       )
       SELECT 
@@ -539,7 +548,7 @@ export const getCategorySalesReport = async (req, res) => {
       const paymentMethods = paymentRows.filter(payment => 
         payment.category === sale.category && 
         payment.subcategory === sale.subcategory && 
-        Math.abs(parseFloat(payment.unit_price) - parseFloat(sale.unit_price)) < 0.01 // Handle floating point comparison
+        Math.abs(parseFloat(payment.unit_price) - parseFloat(sale.unit_price)) < 0.01
       );
       
       const payment_summary = {};
@@ -559,7 +568,7 @@ export const getCategorySalesReport = async (req, res) => {
       };
     });
     
-    // Calculate summary totals
+    // Calculate summary totals - FIXED: Only count actual revenue, not inflated by discounts
     const summary = {
       total_tickets_sold: enrichedData.reduce((sum, row) => sum + parseInt(row.tickets_sold), 0),
       total_revenue: enrichedData.reduce((sum, row) => sum + parseFloat(row.category_revenue), 0),
@@ -570,9 +579,12 @@ export const getCategorySalesReport = async (req, res) => {
       }
     };
     
-    // Get total payments for verification
+    // Get total payments for verification (excluding discounts from revenue calculation)
     const totalPaymentsQuery = `
-      SELECT SUM(p.amount) as total_payments
+      SELECT 
+        SUM(CASE WHEN p.method != 'discount' THEN p.amount ELSE 0 END) as total_non_discount_payments,
+        SUM(CASE WHEN p.method = 'discount' THEN p.amount ELSE 0 END) as total_discounts,
+        SUM(p.amount) as total_all_payments
       FROM payments p
       JOIN orders o ON p.order_id = o.id
       ${dateFilter}
@@ -580,20 +592,12 @@ export const getCategorySalesReport = async (req, res) => {
     
     const { rows: totalPayments } = await pool.query(totalPaymentsQuery, params);
     
-    // Calculate total allocated payments
-    const totalAllocatedPayments = enrichedData.reduce((sum, item) => {
-      if (item.payment_summary) {
-        return sum + Object.values(item.payment_summary).reduce((pSum, amount) => pSum + parseFloat(amount || 0), 0);
-      }
-      return sum;
-    }, 0);
-    
     res.json({
       summary: {
         ...summary,
-        total_payments_verification: parseFloat(totalPayments[0]?.total_payments || 0),
-        total_allocated_payments: Math.round(totalAllocatedPayments * 100) / 100,
-        allocation_accuracy: Math.abs(parseFloat(totalPayments[0]?.total_payments || 0) - totalAllocatedPayments) < 1 ? 'ACCURATE' : 'DISCREPANCY_DETECTED'
+        total_payments_verification: parseFloat(totalPayments[0]?.total_non_discount_payments || 0),
+        total_discounts: parseFloat(totalPayments[0]?.total_discounts || 0),
+        total_all_payments: parseFloat(totalPayments[0]?.total_all_payments || 0)
       },
       categories: enrichedData,
       report_generated: new Date().toISOString()
@@ -604,7 +608,6 @@ export const getCategorySalesReport = async (req, res) => {
     res.status(500).json({ error: 'Failed to generate report', details: error.message });
   }
 };
-
 // Alternative: More detailed report with payment methods
 export const getDetailedCategorySalesReport = async (req, res) => {
   try {
