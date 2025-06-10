@@ -341,102 +341,7 @@ const CheckoutPanel = ({ ticketCounts, types, onCheckout, onClear, mode = "new",
     }
   };
 
-  // Updated function for credit-only checkout with 'postponed' payment
- // Replace the handleCreditOnlyCheckout function:
-
-  const handleCreditOnlyCheckout = async () => {
-    try {
-      const user_id = parseInt(localStorage.getItem("userId"), 10);
-      if (!user_id || isNaN(user_id)) {
-        notify.error("Missing or invalid user ID");
-        return;
-      }
-
-      // Create payload with 'postponed' payment instead of no payments
-      let payload = {
-        user_id,
-        description: description.trim() || `Credit sale - ${new Date().toLocaleString()}`,
-        tickets: selected.map((t) => ({
-          ticket_type_id: parseInt(t.id, 10),
-          quantity: parseInt(normalizedTicketCounts[t.id], 10)
-        })),
-        // Use 'postponed' payment type for credit-linked categories
-        payments: [{
-          method: 'postponed',
-          amount: parseFloat(finalTotal.toFixed(2))
-        }],
-        total_amount: finalTotal,
-        gross_total: ticketTotal + mealTotal
-      };
-
-      // FIXED: Add meals with correct structure for backend
-      if (Object.keys(mealCounts).length > 0) {
-        payload.meals = Object.entries(mealCounts).map(([meal_id, quantity]) => {
-          const meal = meals.find((m) => m.id === parseInt(meal_id));
-          if (!meal) {
-            console.error(`Meal not found for ID: ${meal_id}`);
-            return null;
-          }
-          return {
-            meal_id: parseInt(meal_id, 10),  // Backend expects meal_id
-            quantity: parseInt(quantity, 10),
-            price_at_order: parseFloat(meal.price || 0)  // Backend expects price_at_order
-          };
-        }).filter(meal => meal !== null); // Remove any null entries
-      }
-
-      console.log("Submitting credit-only payload with postponed payment:", payload);
-
-      // Call onCheckout - backend will handle credit deduction
-      await onCheckout(payload);
-      
-      // Reset the component state
-      setDescription("");
-      setMealCounts({});
-      
-      notify.success(`✅ Credit sale completed with postponed payment! Opening print windows...`);
-      
-      // Start the print process
-      setTimeout(() => {
-        openTwoPrintWindows(finalTotal);
-      }, 500);
-      
-    } catch (error) {
-      console.error("Credit checkout error:", error);
-      
-      if (error.response?.data?.type === 'INSUFFICIENT_CREDIT') {
-        notify.error(`❌ Insufficient credit balance. ${error.response.data.details || ''}`);
-      } else if (error.response?.data?.type === 'MIXED_PAYMENT_ERROR') {
-        notify.error('❌ Cannot mix credit and cash tickets. Please separate the orders.');
-      } else {
-        notify.error(error.response?.data?.error || "Failed to process credit sale");
-      }
-    }
-  };
-  // Update the checkout button text and behavior
-  const getCheckoutButtonText = () => {
-    if (isCheckingCredit) return "Checking...";
-    
-    if (creditStatus?.summary?.payment_type === 'CREDIT_ONLY') {
-      return "📝 Checkout with Postponed Payment";
-    } else if (creditStatus?.summary?.payment_type === 'MIXED_ERROR') {
-      return "❌ Mixed Payment Error";
-    } else {
-      return "Checkout";
-    }
-  };
-
-  const getCheckoutButtonColor = () => {
-    if (creditStatus?.summary?.payment_type === 'CREDIT_ONLY') {
-      return "#4CAF50"; // Green for credit
-    } else if (creditStatus?.summary?.payment_type === 'MIXED_ERROR') {
-      return "#f44336"; // Red for error
-    } else {
-      return "#00AEEF"; // Default blue
-    }
-  };
-
-  // Handle checkout confirmation
+  // Handle checkout confirmation - FIXED VERSION
   const handleConfirm = async () => {
     try {
       const user_id = parseInt(localStorage.getItem("userId"), 10);
@@ -519,32 +424,44 @@ const CheckoutPanel = ({ ticketCounts, types, onCheckout, onClear, mode = "new",
         gross_total: ticketTotal + mealTotal
       };
       
-      if (mode === "existing") {
+      // FIXED: Always include tickets array, even if empty
+      if (mode === "existing" && normalizedTicketIds.length > 0) {
         payload.ticket_ids = normalizedTicketIds;
-      } else {
+      } else if (selected.length > 0) {
         payload.tickets = selected.map((t) => ({
           ticket_type_id: parseInt(t.id, 10),
           quantity: parseInt(normalizedTicketCounts[t.id], 10)
         }));
+      } else {
+        // Always provide empty tickets array when no tickets selected
+        payload.tickets = [];
       }
 
-      // FIXED: Add meals with correct structure for backend
+      // FIXED: Use correct field names for backend
       if (Object.keys(mealCounts).length > 0) {
         payload.meals = Object.entries(mealCounts).map(([meal_id, quantity]) => {
           const meal = meals.find((m) => m.id === parseInt(meal_id));
-          if (!meal) {
-            console.error(`Meal not found for ID: ${meal_id}`);
-            return null;
-          }
-          return {
-            meal_id: parseInt(meal_id, 10),  // Backend expects meal_id
+          const mealData = {
+            id: parseInt(meal_id),        // Backend expects 'id'
             quantity: parseInt(quantity, 10),
-            price_at_order: parseFloat(meal.price || 0)  // Backend expects price_at_order
+            price: Number(meal?.price || 0)  // Backend expects 'price'
           };
-        }).filter(meal => meal !== null); // Remove any null entries
+          console.log('Meal data being sent:', mealData);
+          return mealData;
+        });
+        console.log('Full meals array:', payload.meals);
       }
 
-      console.log("Submitting payload:", payload);
+      console.log("=== COMPLETE PAYLOAD DEBUG ===");
+      console.log("User ID:", payload.user_id);
+      console.log("Tickets:", payload.tickets);
+      console.log("Ticket IDs:", payload.ticket_ids);
+      console.log("Meals:", payload.meals);
+      console.log("Payments:", payload.payments);
+      console.log("Total amount:", payload.total_amount);
+      console.log("Gross total:", payload.gross_total);
+      console.log("Description:", payload.description);
+      console.log("===============================");
 
       // Call onCheckout - backend will receive correct total
       await onCheckout(payload);
@@ -580,7 +497,87 @@ const CheckoutPanel = ({ ticketCounts, types, onCheckout, onClear, mode = "new",
       
     } catch (error) {
       console.error("Checkout error:", error);
-      notify.error("Error processing checkout");
+      console.error("Error response:", error.response?.data);
+      console.error("Error status:", error.response?.status);
+      notify.error(error.response?.data?.error || "Error processing checkout");
+    }
+  };
+
+  // Updated function for credit-only checkout with 'postponed' payment - FIXED VERSION
+  const handleCreditOnlyCheckout = async () => {
+    try {
+      const user_id = parseInt(localStorage.getItem("userId"), 10);
+      if (!user_id || isNaN(user_id)) {
+        notify.error("Missing or invalid user ID");
+        return;
+      }
+
+      // Create payload with 'postponed' payment instead of no payments
+      let payload = {
+        user_id,
+        description: description.trim() || `Credit sale - ${new Date().toLocaleString()}`,
+        // Use 'postponed' payment type for credit-linked categories
+        payments: [{
+          method: 'postponed',
+          amount: parseFloat(finalTotal.toFixed(2))
+        }],
+        total_amount: finalTotal,
+        gross_total: ticketTotal + mealTotal
+      };
+
+      // FIXED: Always include tickets array, even if empty
+      if (selected.length > 0) {
+        payload.tickets = selected.map((t) => ({
+          ticket_type_id: parseInt(t.id, 10),
+          quantity: parseInt(normalizedTicketCounts[t.id], 10)
+        }));
+      } else {
+        payload.tickets = [];
+      }
+
+      // FIXED: Use correct field names for backend
+      if (Object.keys(mealCounts).length > 0) {
+        payload.meals = Object.entries(mealCounts).map(([meal_id, quantity]) => {
+          const meal = meals.find((m) => m.id === parseInt(meal_id));
+          const mealData = {
+            id: parseInt(meal_id),        // Backend expects 'id'
+            quantity: parseInt(quantity, 10),
+            price: Number(meal?.price || 0)  // Backend expects 'price'
+          };
+          console.log('Credit meal data being sent:', mealData);
+          return mealData;
+        });
+        console.log('Full credit meals array:', payload.meals);
+      }
+
+      console.log("Submitting credit-only payload with postponed payment:", payload);
+
+      // Call onCheckout - backend will handle credit deduction
+      await onCheckout(payload);
+      
+      // Reset the component state
+      setDescription("");
+      setMealCounts({});
+      
+      notify.success(`✅ Credit sale completed with postponed payment! Opening print windows...`);
+      
+      // Start the print process
+      setTimeout(() => {
+        openTwoPrintWindows(finalTotal);
+      }, 500);
+      
+    } catch (error) {
+      console.error("Credit checkout error:", error);
+      console.error("Credit error response:", error.response?.data);
+      console.error("Credit error status:", error.response?.status);
+      
+      if (error.response?.data?.type === 'INSUFFICIENT_CREDIT') {
+        notify.error(`❌ Insufficient credit balance. ${error.response.data.details || ''}`);
+      } else if (error.response?.data?.type === 'MIXED_PAYMENT_ERROR') {
+        notify.error('❌ Cannot mix credit and cash tickets. Please separate the orders.');
+      } else {
+        notify.error(error.response?.data?.error || "Failed to process credit sale");
+      }
     }
   };
 
@@ -907,6 +904,31 @@ const CheckoutPanel = ({ ticketCounts, types, onCheckout, onClear, mode = "new",
         ` : ''}
       </div>
     `;
+  };
+
+  // Get checkout button color based on credit status
+  const getCheckoutButtonColor = () => {
+    if (creditStatus?.summary?.payment_type === 'CREDIT_ONLY') {
+      return "#4caf50"; // Green for credit
+    }
+    return "#00AEEF"; // Default blue
+  };
+
+  // Get checkout button text based on credit status
+  const getCheckoutButtonText = () => {
+    if (isCheckingCredit) {
+      return "Checking Credit...";
+    }
+    
+    if (creditStatus?.summary?.payment_type === 'CREDIT_ONLY') {
+      return "Credit Checkout (Postponed)";
+    }
+    
+    if (creditStatus?.summary?.payment_type === 'MIXED_ERROR') {
+      return "Cannot Mix Credit & Cash";
+    }
+    
+    return "Checkout";
   };
 
   return (

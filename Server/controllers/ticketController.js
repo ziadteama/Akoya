@@ -94,8 +94,19 @@ export const sellTickets = async (req, res) => {
       }
     }
 
-    // Check for mixed credit/non-credit categories (not allowed)
-    if (creditCategories.size > 0 && nonCreditCategories.size > 0) {
+    // Add meals total to gross total
+    if (meals && Array.isArray(meals)) {
+      for (const meal of meals) {
+        grossTotal += (meal.price || 0) * (meal.quantity || 0);
+      }
+    }
+
+    // For meals-only orders, skip credit/cash category checking
+    const hasTickers = tickets && tickets.length > 0;
+    const hasMeals = meals && meals.length > 0;
+
+    // Only check for mixed credit/non-credit if there are actual tickets
+    if (hasTickers && creditCategories.size > 0 && nonCreditCategories.size > 0) {
       await client.query('ROLLBACK');
       return res.status(400).json({ 
         error: "Cannot mix credit-enabled and cash-only tickets in the same order",
@@ -104,6 +115,10 @@ export const sellTickets = async (req, res) => {
         nonCreditCategories: Array.from(nonCreditCategories)
       });
     }
+
+    // For meals-only orders, treat as cash-only
+    const isMealsOnly = !hasTickers && hasMeals;
+    const isCredit = hasTickers && creditCategories.size > 0;
 
     // Create order
     const orderResult = await client.query(
@@ -216,36 +231,14 @@ async function insertTicketsToDatabase(client, orderId, tickets) {
   }
 }
 
-// Helper function to insert meals - FIXED
+// Helper function to insert meals
 async function insertMealsToDatabase(client, orderId, meals) {
-  if (!meals || !Array.isArray(meals) || meals.length === 0) {
-    console.log('No meals to insert');
-    return;
-  }
-
   for (const meal of meals) {
-    // Validate meal data
-    if (!meal.meal_id || !meal.quantity || meal.quantity <= 0) {
-      console.error('Invalid meal data:', meal);
-      continue;
-    }
-
-    try {
-      await client.query(
-        `INSERT INTO order_meals (order_id, meal_id, quantity, price_at_order)
-         VALUES ($1, $2, $3, $4)`,
-        [
-          orderId, 
-          parseInt(meal.meal_id), 
-          parseInt(meal.quantity), 
-          parseFloat(meal.price_at_order || 0)
-        ]
-      );
-      console.log(`✅ Inserted meal: ID ${meal.meal_id}, Qty: ${meal.quantity}, Price: ${meal.price_at_order}`);
-    } catch (error) {
-      console.error(`❌ Error inserting meal ${meal.meal_id}:`, error);
-      throw error;
-    }
+    await client.query(
+      `INSERT INTO order_meals (order_id, meal_id, quantity, price_at_order)
+       VALUES ($1, $2, $3, $4)`,
+      [orderId, meal.id, meal.quantity, meal.price]
+    );
   }
 }
 
@@ -548,24 +541,13 @@ export const checkoutExistingTickets = async (req, res) => {
       );
     }
     
-    // Add meals if any - FIXED
+    // Add meals if any
     if (meals && Array.isArray(meals) && meals.length > 0) {
       for (const meal of meals) {
-        // Validate meal structure
-        if (!meal.meal_id || !meal.quantity || meal.quantity <= 0) {
-          console.error('Invalid meal data in existing ticket checkout:', meal);
-          continue;
-        }
-
         await client.query(
           `INSERT INTO order_meals (order_id, meal_id, quantity, price_at_order) 
            VALUES ($1, $2, $3, $4)`,
-          [
-            orderId, 
-            parseInt(meal.meal_id), 
-            parseInt(meal.quantity), 
-            parseFloat(meal.price_at_order || 0)
-          ]
+          [orderId, meal.id, meal.quantity, meal.price]
         );
       }
     }
@@ -1090,4 +1072,3 @@ export const checkCreditStatus = async (req, res) => {
     res.status(500).json({ error: 'Failed to check credit status' });
   }
 };
-
