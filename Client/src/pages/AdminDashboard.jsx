@@ -1,4 +1,6 @@
-﻿import React, { useState, useEffect } from 'react';
+﻿// Replace the entire AdminDashboard.jsx with this updated version:
+
+import React, { useState, useEffect } from 'react';
 import { Box, Container, Grid, Paper, Typography, Card, CardContent, 
   Tab, Tabs, IconButton, Menu, MenuItem, Chip, CircularProgress, Divider, 
   useTheme, Drawer, List, ListItem, ListItemIcon, ListItemText, AppBar, 
@@ -43,8 +45,8 @@ import DateRangeIcon from '@mui/icons-material/DateRange';
 import RefreshIcon from '@mui/icons-material/Refresh';
 import FileDownloadIcon from '@mui/icons-material/FileDownload';
 import PrintIcon from '@mui/icons-material/Print';
-// Remove config import
-// import config from '../../../config';
+import FullscreenIcon from '@mui/icons-material/Fullscreen';
+import FullscreenExitIcon from '@mui/icons-material/FullscreenExit';
 
 const drawerWidth = 240;
 
@@ -52,15 +54,15 @@ const Main = styled('main', { shouldForwardProp: (prop) => prop !== 'open' })(
   ({ theme, open }) => ({
     flexGrow: 1,
     padding: theme.spacing(3),
-    paddingBottom: theme.spacing(10), // Add bottom padding for better spacing
+    paddingBottom: theme.spacing(10),
     transition: theme.transitions.create('margin', {
       easing: theme.transitions.easing.sharp,
       duration: theme.transitions.duration.leavingScreen,
     }),
     marginLeft: `-${drawerWidth}px`,
-    height: '100vh', // Set height to 100% of viewport height
-    overflowY: 'auto', // Enable vertical scrolling
-    overflowX: 'hidden', // Prevent horizontal scrolling
+    height: '100vh',
+    overflowY: 'auto',
+    overflowX: 'hidden',
     ...(open && {
       transition: theme.transitions.create('margin', {
         easing: theme.transitions.easing.easeOut,
@@ -75,7 +77,6 @@ const DrawerHeader = styled('div')(({ theme }) => ({
   display: 'flex',
   alignItems: 'center',
   padding: theme.spacing(0, 1),
-  // necessary for content to be below app bar
   ...theme.mixins.toolbar,
   justifyContent: 'flex-end',
 }));
@@ -138,11 +139,12 @@ const AdminDashboard = () => {
   const [toDate, setToDate] = useState(dayjs());
   const [dateMenuAnchorEl, setDateMenuAnchorEl] = useState(null);
   const [error, setError] = useState(null);
+  const [isFullscreen, setIsFullscreen] = useState(false);
   const [kpiData, setKpiData] = useState({
     totalRevenue: "0.00",
     ticketsCount: "0",
     mealsCount: "0",
-    avgOrderValue: "0.00"
+    avgTicketValue: "0.00"  // Changed from avgOrderValue
   });
 
   // Define chart colors
@@ -158,6 +160,35 @@ const AdminDashboard = () => {
     '#ADE8F4', // Pale blue
     '#023E8A', // Navy blue
   ];
+
+  // Fullscreen toggle function
+  const toggleFullscreen = () => {
+    if (!document.fullscreenElement) {
+      document.documentElement.requestFullscreen().then(() => {
+        setIsFullscreen(true);
+      }).catch((err) => {
+        console.error('Error attempting to enable fullscreen:', err);
+      });
+    } else {
+      document.exitFullscreen().then(() => {
+        setIsFullscreen(false);
+      }).catch((err) => {
+        console.error('Error attempting to exit fullscreen:', err);
+      });
+    }
+  };
+
+  // Add fullscreen event listener
+  useEffect(() => {
+    const handleFullscreenChange = () => {
+      setIsFullscreen(!!document.fullscreenElement);
+    };
+
+    document.addEventListener('fullscreenchange', handleFullscreenChange);
+    return () => {
+      document.removeEventListener('fullscreenchange', handleFullscreenChange);
+    };
+  }, []);
 
   // Fetch data using the API like in AccountantReports
   const fetchData = async () => {
@@ -176,18 +207,14 @@ const AdminDashboard = () => {
         endDate: toDate.format("YYYY-MM-DD") 
       };
       
-      console.log("Fetching data with params:", params); // Debug log
+      console.log("Fetching data with params:", params);
       
       const response = await axios.get(`${baseUrl}/api/orders/range-report`, { params });
       
-      console.log("API response:", response); // Debug log
+      console.log("API response:", response);
       
-      // The data is directly in response.data (not in response.data.items)
       if (response.data && Array.isArray(response.data)) {
-        // We have an array of orders directly
         setOrders(response.data);
-        
-        // Process data for KPIs and charts
         processOrderData(response.data);
         console.log("Orders set:", response.data.length);
       } else {
@@ -203,21 +230,21 @@ const AdminDashboard = () => {
         totalRevenue: "0.00",
         ticketsCount: "0",
         mealsCount: "0",
-        avgOrderValue: "0.00"
+        avgTicketValue: "0.00"  // Changed from avgOrderValue
       });
     } finally {
       setLoading(false);
     }
   };
 
-  // Update processOrderData to exclude discounts from total revenue
+  // Update processOrderData to calculate average ticket value
   const processOrderData = (data) => {
     if (!data || data.length === 0) {
       setKpiData({
         totalRevenue: "0.00",
         ticketsCount: "0",
         mealsCount: "0",
-        avgOrderValue: "0.00"
+        avgTicketValue: "0.00"  // Changed from avgOrderValue
       });
       return;
     }
@@ -226,7 +253,6 @@ const AdminDashboard = () => {
     let totalRevenue = 0;
     
     data.forEach(order => {
-      // Just use the order amount which already has discounts removed
       const orderAmount = parseFloat(order.total_amount || 0);
       totalRevenue += orderAmount;
     });
@@ -251,14 +277,14 @@ const AdminDashboard = () => {
       }
     });
     
-    // Calculate average order value (excluding discounts)
-    const avgOrderValue = data.length ? totalRevenue / data.length : 0;
+    // Calculate average ticket value (total revenue divided by tickets count)
+    const avgTicketValue = ticketsCount ? totalRevenue / ticketsCount : 0;
     
     setKpiData({
       totalRevenue: totalRevenue.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }),
       ticketsCount: ticketsCount.toString(),
       mealsCount: mealsCount.toString(),
-      avgOrderValue: avgOrderValue.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+      avgTicketValue: avgTicketValue.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })  // Changed from avgOrderValue
     });
   };
 
@@ -331,7 +357,6 @@ const AdminDashboard = () => {
   const handleFromDateChange = (newVal) => {
     if (newVal) {
       setFromDate(newVal);
-      // Ensure from date is not after to date
       if (newVal.isAfter(toDate)) {
         setToDate(newVal);
       }
@@ -342,7 +367,6 @@ const AdminDashboard = () => {
   const handleToDateChange = (newVal) => {
     if (newVal) {
       setToDate(newVal);
-      // Ensure to date is not before from date
       if (fromDate.isAfter(newVal)) {
         setFromDate(newVal);
       }
@@ -360,7 +384,6 @@ const AdminDashboard = () => {
         revenueByDate[date] = 0;
       }
       
-      // Just use the order amount with discounts already removed
       const orderAmount = parseFloat(order.total_amount || 0);
       revenueByDate[date] += orderAmount;
     });
@@ -446,7 +469,7 @@ const AdminDashboard = () => {
     localStorage.removeItem("userRole");
     localStorage.removeItem("userName");
     localStorage.removeItem("userId");
-    navigate("/"); // Redirect to login page
+    navigate("/");
   };
   
   return (
@@ -479,6 +502,23 @@ const AdminDashboard = () => {
             <Typography variant="h6" noWrap component="div" sx={{ flexGrow: 1 }}>
               Hola, {localStorage.getItem('userName')}
             </Typography>
+            
+            {/* Fullscreen Button */}
+            <IconButton 
+              color="inherit" 
+              aria-label="toggle fullscreen"
+              onClick={toggleFullscreen}
+              sx={{
+                mr: 1,
+                '&:hover': {
+                  color: '#00B4D8',
+                  backgroundColor: 'rgba(0, 180, 216, 0.08)'
+                },
+              }}
+            >
+              {isFullscreen ? <FullscreenExitIcon /> : <FullscreenIcon />}
+            </IconButton>
+            
             <IconButton 
               color="inherit" 
               aria-label="logout"
@@ -683,11 +723,11 @@ const AdminDashboard = () => {
                 </Grid>
                 <Grid item xs={12} md={3}>
                   <StatsCard 
-                    icon={<AttachMoneyIcon sx={{ color: '#0077B6', fontSize: 28 }} />}
-                    title="Avg. Order Value"
-                    value={`$${kpiData.avgOrderValue}`}
+                    icon={<ConfirmationNumberIcon sx={{ color: '#0077B6', fontSize: 28 }} />}
+                    title="Avg. Ticket Value"
+                    value={`$${kpiData.avgTicketValue}`}
                     color="#0077B6"
-                    secondaryValue="Per transaction"
+                    secondaryValue="Per ticket"
                   />
                 </Grid>
               </Grid>
@@ -755,30 +795,37 @@ const AdminDashboard = () => {
                   <Grid item xs={12} md={4}>
                     <Paper sx={{ p: 3, height: '100%', borderRadius: 3, boxShadow: '0 4px 20px rgba(0, 0, 0, 0.1)' }}>
                       <Typography variant="h6" sx={{ mb: 2, fontWeight: 'bold' }}>Payment Methods</Typography>
-                      <Box sx={{ height: 300, width: '100%' }}>
+                      <Box sx={{ 
+                        height: 300, 
+                        width: '100%',
+                        display: 'flex',
+                        justifyContent: 'center',
+                        alignItems: 'center',
+                        overflow: 'hidden'
+                      }}>
                         {paymentData && paymentData.length > 0 ? (
                           <PieChart
                             series={[
                               {
                                 data: paymentData,
                                 highlightScope: { faded: 'global', highlighted: 'item' },
-                                faded: { innerRadius: 30, additionalRadius: -30, color: 'gray' }
+                                faded: { innerRadius: 30, additionalRadius: -30, color: 'gray' },
+                                outerRadius: 80,
+                                innerRadius: 20,
                               }
                             ]}
+                            width={300}
                             height={300}
-                            margin={{ top: 20, bottom: 20, left: 20, right: 20 }}
                             slotProps={{
                               legend: {
                                 direction: 'column',
-                                position: { vertical: 'middle', horizontal: 'right' },
+                                position: { vertical: 'bottom', horizontal: 'middle' },
                                 padding: 0,
                               }
                             }}
                           />
                         ) : (
-                          <Box sx={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '100%' }}>
-                            <Typography color="text.secondary">No payment data available for the selected period</Typography>
-                          </Box>
+                          <Typography color="text.secondary">No payment data available for the selected period</Typography>
                         )}
                       </Box>
                     </Paper>
@@ -835,7 +882,6 @@ const AdminDashboard = () => {
                       ) : (
                         <Box>
                           {orders.slice(0, 5).map((order) => {
-                            // Just use the order amount which already has discounts removed
                             const orderTotal = parseFloat(order.total_amount || 0);
                             
                             return (
@@ -908,4 +954,3 @@ const AdminDashboard = () => {
 };
 
 export default AdminDashboard;
-
