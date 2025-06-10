@@ -216,14 +216,36 @@ async function insertTicketsToDatabase(client, orderId, tickets) {
   }
 }
 
-// Helper function to insert meals
+// Helper function to insert meals - FIXED
 async function insertMealsToDatabase(client, orderId, meals) {
+  if (!meals || !Array.isArray(meals) || meals.length === 0) {
+    console.log('No meals to insert');
+    return;
+  }
+
   for (const meal of meals) {
-    await client.query(
-      `INSERT INTO order_meals (order_id, meal_id, quantity, price_at_order)
-       VALUES ($1, $2, $3, $4)`,
-      [orderId, meal.id, meal.quantity, meal.price]
-    );
+    // Validate meal data
+    if (!meal.meal_id || !meal.quantity || meal.quantity <= 0) {
+      console.error('Invalid meal data:', meal);
+      continue;
+    }
+
+    try {
+      await client.query(
+        `INSERT INTO order_meals (order_id, meal_id, quantity, price_at_order)
+         VALUES ($1, $2, $3, $4)`,
+        [
+          orderId, 
+          parseInt(meal.meal_id), 
+          parseInt(meal.quantity), 
+          parseFloat(meal.price_at_order || 0)
+        ]
+      );
+      console.log(`✅ Inserted meal: ID ${meal.meal_id}, Qty: ${meal.quantity}, Price: ${meal.price_at_order}`);
+    } catch (error) {
+      console.error(`❌ Error inserting meal ${meal.meal_id}:`, error);
+      throw error;
+    }
   }
 }
 
@@ -526,13 +548,24 @@ export const checkoutExistingTickets = async (req, res) => {
       );
     }
     
-    // Add meals if any
+    // Add meals if any - FIXED
     if (meals && Array.isArray(meals) && meals.length > 0) {
       for (const meal of meals) {
+        // Validate meal structure
+        if (!meal.meal_id || !meal.quantity || meal.quantity <= 0) {
+          console.error('Invalid meal data in existing ticket checkout:', meal);
+          continue;
+        }
+
         await client.query(
           `INSERT INTO order_meals (order_id, meal_id, quantity, price_at_order) 
            VALUES ($1, $2, $3, $4)`,
-          [orderId, meal.meal_id, meal.quantity, meal.price_at_order]
+          [
+            orderId, 
+            parseInt(meal.meal_id), 
+            parseInt(meal.quantity), 
+            parseFloat(meal.price_at_order || 0)
+          ]
         );
       }
     }

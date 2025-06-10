@@ -342,6 +342,8 @@ const CheckoutPanel = ({ ticketCounts, types, onCheckout, onClear, mode = "new",
   };
 
   // Updated function for credit-only checkout with 'postponed' payment
+ // Replace the handleCreditOnlyCheckout function:
+
   const handleCreditOnlyCheckout = async () => {
     try {
       const user_id = parseInt(localStorage.getItem("userId"), 10);
@@ -367,16 +369,20 @@ const CheckoutPanel = ({ ticketCounts, types, onCheckout, onClear, mode = "new",
         gross_total: ticketTotal + mealTotal
       };
 
-      // Add meals if present
+      // FIXED: Add meals with correct structure for backend
       if (Object.keys(mealCounts).length > 0) {
         payload.meals = Object.entries(mealCounts).map(([meal_id, quantity]) => {
           const meal = meals.find((m) => m.id === parseInt(meal_id));
+          if (!meal) {
+            console.error(`Meal not found for ID: ${meal_id}`);
+            return null;
+          }
           return {
-            meal_id: parseInt(meal_id),
+            meal_id: parseInt(meal_id, 10),  // Backend expects meal_id
             quantity: parseInt(quantity, 10),
-            price_at_order: meal?.price || 0
+            price_at_order: parseFloat(meal.price || 0)  // Backend expects price_at_order
           };
-        });
+        }).filter(meal => meal !== null); // Remove any null entries
       }
 
       console.log("Submitting credit-only payload with postponed payment:", payload);
@@ -407,7 +413,6 @@ const CheckoutPanel = ({ ticketCounts, types, onCheckout, onClear, mode = "new",
       }
     }
   };
-
   // Update the checkout button text and behavior
   const getCheckoutButtonText = () => {
     if (isCheckingCredit) return "Checking...";
@@ -523,16 +528,20 @@ const CheckoutPanel = ({ ticketCounts, types, onCheckout, onClear, mode = "new",
         }));
       }
 
-      // Add meals if present
+      // FIXED: Add meals with correct structure for backend
       if (Object.keys(mealCounts).length > 0) {
         payload.meals = Object.entries(mealCounts).map(([meal_id, quantity]) => {
           const meal = meals.find((m) => m.id === parseInt(meal_id));
+          if (!meal) {
+            console.error(`Meal not found for ID: ${meal_id}`);
+            return null;
+          }
           return {
-            meal_id: parseInt(meal_id),
+            meal_id: parseInt(meal_id, 10),  // Backend expects meal_id
             quantity: parseInt(quantity, 10),
-            price_at_order: meal?.price || 0
+            price_at_order: parseFloat(meal.price || 0)  // Backend expects price_at_order
           };
-        });
+        }).filter(meal => meal !== null); // Remove any null entries
       }
 
       console.log("Submitting payload:", payload);

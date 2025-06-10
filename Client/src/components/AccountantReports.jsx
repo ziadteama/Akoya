@@ -31,6 +31,7 @@ import dayjs from "dayjs";
 import { saveAs } from "file-saver";
 import OrdersTable from "./OrdersTable";
 import { notify } from '../utils/toast';
+import CategorySalesReport from './CategorySalesReport';
 
 // Update dayjs locale configuration for DD/MM/YYYY format
 dayjs.locale({
@@ -53,6 +54,7 @@ const AccountantReports = () => {
   const [useRange, setUseRange] = useState(false);
   const [reportData, setReportData] = useState([]);
   const [ticketsReportData, setTicketsReportData] = useState(null);
+  const [categorySalesData, setCategorySalesData] = useState(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
   const [summary, setSummary] = useState({ totalTickets: 0, totalRevenue: 0 });
@@ -129,7 +131,7 @@ const AccountantReports = () => {
       setError(errorMessage);
       notify.error(errorMessage);
       setReportData([]);
-      setSummary({ totalTickets: 0, totalRevenue: 0, totalDiscounts: 0 });
+      setSummary({ totalTickets: 0, totalRevenue: 0, totalDiscounts: 0 });  
     } finally {
       setLoading(false);
     }
@@ -177,13 +179,52 @@ const AccountantReports = () => {
     }
   };
 
+  // New fetch function for category sales report
+  const fetchCategorySalesReport = async (shouldFetch = true) => {
+    if (!shouldFetch || !baseUrl) {
+      if (!baseUrl) {
+        setError("API configuration not available");
+        notify.error("API configuration not available");
+      }
+      return;
+    }
+    
+    setLoading(true);
+    setError(null);
+    
+    try {
+      const params = useRange
+        ? { startDate: formatApiDate(fromDate), endDate: formatApiDate(toDate) }
+        : { date: formatApiDate(selectedDate) };
+          
+      const endpoint = useRange
+        ? `${baseUrl}/api/reports/category-sales-range`
+        : `${baseUrl}/api/reports/category-sales`;
+          
+      const { data } = await axios.get(endpoint, { params });
+      
+      setCategorySalesData(data);
+      notify.success("Category sales report loaded successfully");
+    } catch (error) {
+      console.error("Error fetching category sales report:", error);
+      const errorMessage = "Failed to fetch category sales report. Please try again.";
+      setError(errorMessage);
+      notify.error(errorMessage);
+      setCategorySalesData(null);
+    } finally {
+      setLoading(false);
+    }
+  };
+
   // Modified useEffect to handle both report types
   useEffect(() => {
     const timer = setTimeout(() => {
       if (reportMode === 'orders') {
         fetchOrdersReport();
-      } else {
+      } else if (reportMode === 'tickets') {
         fetchTicketsReport();
+      } else {
+        fetchCategorySalesReport();
       }
     }, 500);
     
@@ -527,10 +568,14 @@ const AccountantReports = () => {
   };
 
   const handleRefresh = () => {
+    setError(null);
     if (reportMode === 'orders') {
-      fetchOrdersReport(true);
-    } else {
-      fetchTicketsReport(true);
+      fetchOrdersReport();
+    } else if (reportMode === 'tickets') {
+      fetchTicketsReport();
+    } else if (reportMode === 'category-sales') {
+      // Force a refresh of category sales data
+      setCategorySalesData(null);
     }
   };
 
@@ -1560,6 +1605,7 @@ const AccountantReports = () => {
             >
               <ToggleButton value="orders">📋 Orders</ToggleButton>
               <ToggleButton value="tickets">🎟️ Tickets</ToggleButton>
+              <ToggleButton value="category-sales">📊 Category Sales</ToggleButton>
             </ToggleButtonGroup>
           </Box>
 
@@ -1656,7 +1702,7 @@ const AccountantReports = () => {
             <Box sx={{ 
               flex: 1,
               overflow: "auto",
-              p: reportMode === 'tickets' ? 2 : 0
+              p: reportMode === 'tickets' || reportMode === 'category-sales' ? 0 : 0
             }}>
               {loading ? (
                 <Box display="flex" justifyContent="center" alignItems="center" height="100%">
@@ -1673,7 +1719,7 @@ const AccountantReports = () => {
                 ) : (
                   <OrdersTable data={reportData} />
                 )
-              ) : (
+              ) : reportMode === 'tickets' ? (
                 !ticketsReportData || (!ticketsReportData.tickets.length && !ticketsReportData.meals.length) ? (
                   <Box display="flex" justifyContent="center" alignItems="center" height="100%" flexDirection="column">
                     <Typography variant="h6" color="textSecondary" mb={1}>🎟️</Typography>
@@ -1682,8 +1728,7 @@ const AccountantReports = () => {
                     </Typography>
                   </Box>
                 ) : (
-                  <Box>
-                    {/* Tickets Section */}
+                  <Box sx={{ p: 2 }}>
                     {ticketsReportData.tickets.length > 0 && (
                       <Box mb={2}>
                         {Object.entries(groupTicketsByCategory(ticketsReportData.tickets)).map(([category, subcategories]) => (
@@ -1696,13 +1741,26 @@ const AccountantReports = () => {
                       </Box>
                     )}
 
-                    {/* Meals Section */}
                     {ticketsReportData.meals.length > 0 && (
                       <EnhancedMealsCard meals={ticketsReportData.meals} />
                     )}
                   </Box>
                 )
-              )}
+              ) : reportMode === 'category-sales' ? (
+                <CategorySalesReport
+                  selectedDate={selectedDate}
+                  fromDate={fromDate}
+                  toDate={toDate}
+                  useRange={useRange}
+                  formatApiDate={formatApiDate}
+                  loading={loading}
+                  setLoading={setLoading}
+                  error={error}
+                  setError={setError}
+                  categorySalesData={categorySalesData}
+                  setCategorySalesData={setCategorySalesData}
+                />
+              ) : null}
             </Box>
           </Paper>
 
@@ -1845,6 +1903,40 @@ const AccountantReports = () => {
                   </Button>
                 </Grid>
               </Grid>
+            ) : reportMode === 'category-sales' ? (
+              categorySalesData && categorySalesData.categories && categorySalesData.categories.length > 0 ? (
+                <Grid container spacing={2} alignItems="center">
+                  <Grid item xs={12} md={8}>
+                    <Box display="flex" gap={4} justifyContent={{ xs: "center", md: "flex-start" }} flexWrap="wrap">
+                      <Typography variant="body1" sx={{ fontWeight: 700, color: "#00AEEF", fontSize: '1.1rem' }}>
+                        <b>🏷️ Categories:</b> {categorySalesData.summary.categories_count}
+                      </Typography>
+                      <Typography variant="body1" sx={{ fontWeight: 700, color: "#00AEEF", fontSize: '1.1rem' }}>
+                        <b>🎟️ Tickets:</b> {categorySalesData.summary.total_tickets_sold}
+                      </Typography>
+                      <Typography variant="body1" sx={{ fontWeight: 700, color: "#00AEEF", fontSize: '1.1rem' }}>
+                        <b>💰 Revenue:</b> EGP {categorySalesData.summary.total_revenue.toFixed(2)}
+                      </Typography>
+                      {categorySalesData.summary.total_payments_verification && (
+                        <Typography variant="body1" sx={{ fontWeight: 700, color: "#4CAF50", fontSize: '1.1rem' }}>
+                          <b>💳 Payments:</b> EGP {categorySalesData.summary.total_payments_verification.toFixed(2)}
+                        </Typography>
+                      )}
+                    </Box>
+                  </Grid>
+                  <Grid item xs={12} md={4} display="flex" justifyContent="center" gap={1}>
+                    <Typography variant="body2" color="textSecondary" sx={{ fontSize: '0.9rem', textAlign: 'center' }}>
+                      📊 Category filtering and CSV export available in report above
+                    </Typography>
+                  </Grid>
+                </Grid>
+              ) : (
+                <Box display="flex" justifyContent="center" alignItems="center">
+                  <Typography variant="body1" color="textSecondary" sx={{ fontSize: '1.1rem' }}>
+                    📊 {loading ? 'Loading Category Sales Report...' : 'No category sales data available'}
+                  </Typography>
+                </Box>
+              )
             ) : (
               <Box display="flex" justifyContent="center" alignItems="center">
                 <Typography variant="body1" color="textSecondary" sx={{ fontSize: '1.1rem' }}>
