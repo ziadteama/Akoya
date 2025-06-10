@@ -383,8 +383,8 @@ const CheckoutPanel = ({ ticketCounts, types, onCheckout, onClear, mode = "new",
         
         // Sort payment methods to handle cash last (if present)
         const sortedMethods = paymentMethods.sort((a, b) => {
-          if (a === 'cash') return 1; // Cash goes last
-          if (b === 'cash') return -1; // Cash goes last
+          if (a === 'cash') return 1;
+          if (b === 'cash') return -1;
           return 0;
         });
         
@@ -392,7 +392,6 @@ const CheckoutPanel = ({ ticketCounts, types, onCheckout, onClear, mode = "new",
           const actualAmount = getAmount(method);
           
           if (index === sortedMethods.length - 1) {
-            // Last payment method gets whatever is remaining
             const amountToSend = Math.max(0, remainingTotal);
             if (amountToSend > 0) {
               payments.push({
@@ -401,7 +400,6 @@ const CheckoutPanel = ({ ticketCounts, types, onCheckout, onClear, mode = "new",
               });
             }
           } else {
-            // Non-last payment methods get their full amount or remaining total (whichever is smaller)
             const amountToSend = Math.min(actualAmount, remainingTotal);
             if (amountToSend > 0) {
               payments.push({
@@ -435,56 +433,53 @@ const CheckoutPanel = ({ ticketCounts, types, onCheckout, onClear, mode = "new",
         user_id,
         description: description.trim(),
         payments,
-        total_amount: finalTotal, // Always send the correct required total
+        total_amount: finalTotal,
         gross_total: ticketTotal + mealTotal
       };
       
-      // FIXED: Always include tickets array, even if empty
+      // Handle tickets based on mode - PROPERLY HANDLE BOTH MODES
       if (mode === "existing" && normalizedTicketIds.length > 0) {
         payload.ticket_ids = normalizedTicketIds;
-      } else if (selected.length > 0) {
+        console.log('Regular checkout with existing ticket IDs:', payload.ticket_ids);
+      } else if (mode === "new" && selected.length > 0) {
         payload.tickets = selected.map((t) => ({
           ticket_type_id: parseInt(t.id, 10),
           quantity: parseInt(normalizedTicketCounts[t.id], 10)
         }));
+        console.log('Regular checkout with new tickets:', payload.tickets);
       } else {
         // Always provide empty tickets array when no tickets selected
         payload.tickets = [];
       }
 
-      // FIXED: Use correct field names for backend
+      // FIXED: Handle meals for BOTH modes - use consistent field names
       if (Object.keys(mealCounts).length > 0) {
         payload.meals = Object.entries(mealCounts).map(([meal_id, quantity]) => {
           const meal = meals.find((m) => m.id === parseInt(meal_id));
-          const mealData = {
-            id: parseInt(meal_id),        // Backend expects 'id'
+          return {
+            id: parseInt(meal_id),      // Backend expects 'id'
             quantity: parseInt(quantity, 10),
             price: Number(meal?.price || 0)  // Backend expects 'price'
           };
-          console.log('Meal data being sent:', mealData);
-          return mealData;
         });
-        console.log('Full meals array:', payload.meals);
+        console.log('Meals array for regular checkout:', payload.meals);
       }
 
-      console.log("=== COMPLETE PAYLOAD DEBUG ===");
+      console.log("=== REGULAR CHECKOUT PAYLOAD ===");
+      console.log("Mode:", mode);
       console.log("User ID:", payload.user_id);
-      console.log("Tickets:", payload.tickets);
-      console.log("Ticket IDs:", payload.ticket_ids);
+      console.log("Tickets/Ticket IDs:", payload.tickets || payload.ticket_ids);
       console.log("Meals:", payload.meals);
       console.log("Payments:", payload.payments);
       console.log("Total amount:", payload.total_amount);
       console.log("Gross total:", payload.gross_total);
-      console.log("Description:", payload.description);
-      console.log("===============================");
+      console.log("================================");
 
       // Call onCheckout - backend will receive correct total
       await onCheckout(payload);
       
-      // Close dialog
+      // Close dialog and reset state
       setOpen(false);
-      
-      // Reset the component state
       setDescription("");
       setSelectedMethods([]);
       const resetAmounts = {};
@@ -531,7 +526,6 @@ const CheckoutPanel = ({ ticketCounts, types, onCheckout, onClear, mode = "new",
       let payload = {
         user_id,
         description: description.trim() || `Credit sale - ${new Date().toLocaleString()}`,
-        // Use 'postponed' payment type for credit-linked categories
         payments: [{
           method: 'postponed',
           amount: parseFloat(finalTotal.toFixed(2)) // TOTAL including meals
@@ -540,24 +534,21 @@ const CheckoutPanel = ({ ticketCounts, types, onCheckout, onClear, mode = "new",
         gross_total: ticketTotal + mealTotal
       };
 
-      // Handle tickets based on mode
+      // Handle tickets based on mode - PROPERLY HANDLE BOTH MODES
       if (mode === "existing" && normalizedTicketIds.length > 0) {
-        // For existing tickets, send ticket IDs
         payload.ticket_ids = normalizedTicketIds;
         console.log('Credit checkout with existing ticket IDs:', payload.ticket_ids);
       } else if (mode === "new" && selected.length > 0) {
-        // For new tickets, send ticket type and quantity
         payload.tickets = selected.map((t) => ({
           ticket_type_id: parseInt(t.id, 10),
           quantity: parseInt(normalizedTicketCounts[t.id], 10)
         }));
         console.log('Credit checkout with new tickets:', payload.tickets);
       } else {
-        // Always provide empty tickets array when no tickets selected
         payload.tickets = [];
       }
 
-      // Handle meals if present - MEALS WILL BE DEDUCTED FROM CREDIT TOO
+      // FIXED: Handle meals for BOTH modes - MEALS WILL BE DEDUCTED FROM CREDIT TOO
       if (Object.keys(mealCounts).length > 0) {
         payload.meals = Object.entries(mealCounts).map(([meal_id, quantity]) => {
           const meal = meals.find((m) => m.id === parseInt(meal_id));
