@@ -48,12 +48,7 @@ const CreditManagement = () => {
   return (
     <Container maxWidth="xl">
       <Box sx={{ py: 3 }}>
-        <Typography variant="h4" component="h1" gutterBottom>
-          💳 Credit Management System
-        </Typography>
-        <Typography variant="body1" color="text.secondary" gutterBottom>
-          Manage credit accounts, balances, transactions, and category assignments
-        </Typography>
+       
 
         <Paper sx={{ mt: 3 }}>
           <Box sx={{ borderBottom: 1, borderColor: 'divider' }}>

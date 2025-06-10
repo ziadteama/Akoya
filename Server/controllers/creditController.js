@@ -381,13 +381,6 @@ export const processTicketSaleCredit = async (orderId, tickets, client) => {
       const creditUsedForPayment = Math.abs(deduction.amount);
       totalCreditUsed += creditUsedForPayment;
       
-      // Add CREDIT payment to your existing payments table
-      await client.query(
-        `INSERT INTO payments (order_id, method, amount, reference)
-         VALUES ($1, 'CREDIT'::payment_method, $2, $3)`,
-        [orderId, creditUsedForPayment, deduction.accountName]
-      );
-      
       creditTransactions.push({
         ...transactionResult.rows[0],
         accountName: deduction.accountName,

@@ -331,8 +331,8 @@ export const getPaymentMethods = async (req, res) => {
     
     const { rows } = await pool.query(query);
     
-    // Filter to only the methods you want and format them
-    const allowedMethods = ['visa', 'cash', 'vodafone_cash', 'postponed', 'discount', 'الاهلي و مصر', 'OTHER', 'CREDIT'];
+    // Filter to only the methods you want and format them - CREDIT REMOVED
+    const allowedMethods = ['visa', 'cash', 'vodafone_cash', 'postponed', 'discount', 'الاهلي و مصر', 'OTHER'];
     
     const paymentMethods = rows
       .filter(row => allowedMethods.includes(row.method))
@@ -351,8 +351,8 @@ export const getPaymentMethods = async (req, res) => {
           case 'OTHER':
             label = 'Other';
             break;
-          case 'CREDIT':
-            label = 'Credit';
+          case 'postponed':
+            label = 'Postponed';
             break;
           default:
             // Capitalize first letter

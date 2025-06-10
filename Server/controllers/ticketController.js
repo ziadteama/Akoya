@@ -117,8 +117,8 @@ export const sellTickets = async (req, res) => {
 
     // Process credit-only or cash-only orders
     if (creditCategories.size > 0) {
-      // CREDIT-ONLY ORDER
-      console.log('🏦 Processing credit-only order...');
+      // CREDIT-ONLY ORDER - NOW USES POSTPONED PAYMENT
+      console.log('🏦 Processing credit-only order with postponed payment...');
       
       const creditResult = await processTicketSaleCredit(orderId, validTickets, client);
       
@@ -128,13 +128,20 @@ export const sellTickets = async (req, res) => {
       // Insert meals if any
       await insertMealsToDatabase(client, orderId, meals);
 
+      // *** ADD POSTPONED PAYMENT RECORD ***
+      await client.query(
+        `INSERT INTO payments (order_id, method, amount, reference)
+         VALUES ($1, 'postponed'::payment_method, $2, 'Credit account deduction')`,
+        [orderId, grossTotal]
+      );
+
       await client.query('COMMIT');
 
       res.json({
-        message: "Credit sale completed successfully",
+        message: "Credit sale completed successfully with postponed payment",
         order_id: orderId,
         total_amount: grossTotal,
-        payment_type: "CREDIT_ONLY",
+        payment_type: "POSTPONED", // Changed from CREDIT_ONLY
         credit_used: creditResult.totalCreditUsed,
         credit_breakdown: creditResult.creditTransactions.map(ct => ({
           account: ct.accountName,
@@ -510,10 +517,11 @@ export const checkoutExistingTickets = async (req, res) => {
       [orderId, ticket_ids]
     );
     
-    // Add payments
+    // Add payments - handle postponed payment for credit categories
     for (const payment of payments) {
+      // Ensure payment method is properly cast to enum type
       await client.query(
-        `INSERT INTO payments (order_id, method, amount) VALUES ($1, $2, $3)`,
+        `INSERT INTO payments (order_id, method, amount) VALUES ($1, $2::payment_method, $3)`,
         [orderId, payment.method, payment.amount]
       );
     }

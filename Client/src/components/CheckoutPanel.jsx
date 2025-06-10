@@ -30,18 +30,13 @@ const CheckoutPanel = ({ ticketCounts, types, onCheckout, onClear, mode = "new",
   const [customMealQty, setCustomMealQty] = useState(1);
 
   const [selectedMethods, setSelectedMethods] = useState([]);
-  const [amounts, setAmounts] = useState({ 
-    'الاهلي و مصر': 0,
-    'OTHER': 0,
-    'cash': 0, 
-    'vodafone_cash': 0, 
-    'postponed': 0,
-    'discount': 0 
-  });
+  const [amounts, setAmounts] = useState({});
 
   const [cashierName, setCashierName] = useState('');
   const [creditStatus, setCreditStatus] = useState(null);
   const [isCheckingCredit, setIsCheckingCredit] = useState(false);
+
+  const [paymentMethods, setPaymentMethods] = useState([]);
 
   const baseUrl = window.runtimeConfig?.apiBaseUrl;
 
@@ -82,6 +77,54 @@ const CheckoutPanel = ({ ticketCounts, types, onCheckout, onClear, mode = "new",
     const name = localStorage.getItem("userName") || "Unknown Cashier";
     setCashierName(name);
   }, []);
+
+  // Fetch payment methods
+  useEffect(() => {
+    const fetchPaymentMethods = async () => {
+      if (!baseUrl) return;
+      
+      try {
+        const token = localStorage.getItem('authToken');
+        if (!token) return;
+        
+        const response = await axios.get(`${baseUrl}/api/orders/payment-methods`, {
+          headers: { Authorization: `Bearer ${token}` }
+        });
+        
+        setPaymentMethods(response.data);
+        
+        // Initialize amounts state with fetched payment methods
+        const initialAmounts = {};
+        response.data.forEach(method => {
+          initialAmounts[method.value] = 0;
+        });
+        setAmounts(initialAmounts);
+        
+      } catch (error) {
+        console.error('Error fetching payment methods:', error);
+        // Fallback to your specified payment methods
+        const fallbackMethods = [
+          { value: 'cash', label: 'Cash' },
+          { value: 'visa', label: 'Visa' },
+          { value: 'vodafone_cash', label: 'Vodafone Cash' },
+          { value: 'postponed', label: 'Postponed' },
+          { value: 'discount', label: 'Discount' },
+          { value: 'الاهلي و مصر', label: 'الأهلي و مصر' },
+          { value: 'OTHER', label: 'Other' }
+        ];
+        
+        setPaymentMethods(fallbackMethods);
+        
+        const fallbackAmounts = {};
+        fallbackMethods.forEach(method => {
+          fallbackAmounts[method.value] = 0;
+        });
+        setAmounts(fallbackAmounts);
+      }
+    };
+    
+    fetchPaymentMethods();
+  }, [baseUrl]);
 
   // Determine selected tickets based on mode
   const selected = useMemo(() => {
@@ -207,7 +250,7 @@ const CheckoutPanel = ({ ticketCounts, types, onCheckout, onClear, mode = "new",
     // Update refs
     prevSelectedMethodsRef.current = [...selectedMethods];
     prevFinalTotalRef.current = finalTotal;
-  }, [selectedMethods, finalTotal]); // Remove amounts from dependencies
+  }, [selectedMethods, finalTotal]);
 
   // Calculate entered total and remaining amount
   const enteredTotal = useMemo(() => {
@@ -281,7 +324,7 @@ const CheckoutPanel = ({ ticketCounts, types, onCheckout, onClear, mode = "new",
     };
     
     checkCreditStatus();
-  }, [baseUrl, mode, selected.length, selected.map(t => t.id).sort().join(',')]); // Use stable dependencies
+  }, [baseUrl, mode, selected.length, selected.map(t => t.id).sort().join(',')]);
 
   const handleSubmit = () => {
     // Check if this is a credit-only order
@@ -298,7 +341,7 @@ const CheckoutPanel = ({ ticketCounts, types, onCheckout, onClear, mode = "new",
     }
   };
 
-  // Add new function for credit-only checkout
+  // Updated function for credit-only checkout with 'postponed' payment
   const handleCreditOnlyCheckout = async () => {
     try {
       const user_id = parseInt(localStorage.getItem("userId"), 10);
@@ -307,14 +350,21 @@ const CheckoutPanel = ({ ticketCounts, types, onCheckout, onClear, mode = "new",
         return;
       }
 
-      // Create payload for credit-only order (no payments array needed)
+      // Create payload with 'postponed' payment instead of no payments
       let payload = {
         user_id,
         description: description.trim() || `Credit sale - ${new Date().toLocaleString()}`,
         tickets: selected.map((t) => ({
           ticket_type_id: parseInt(t.id, 10),
           quantity: parseInt(normalizedTicketCounts[t.id], 10)
-        }))
+        })),
+        // Use 'postponed' payment type for credit-linked categories
+        payments: [{
+          method: 'postponed',
+          amount: parseFloat(finalTotal.toFixed(2))
+        }],
+        total_amount: finalTotal,
+        gross_total: ticketTotal + mealTotal
       };
 
       // Add meals if present
@@ -329,7 +379,7 @@ const CheckoutPanel = ({ ticketCounts, types, onCheckout, onClear, mode = "new",
         });
       }
 
-      console.log("Submitting credit-only payload:", payload);
+      console.log("Submitting credit-only payload with postponed payment:", payload);
 
       // Call onCheckout - backend will handle credit deduction
       await onCheckout(payload);
@@ -338,11 +388,11 @@ const CheckoutPanel = ({ ticketCounts, types, onCheckout, onClear, mode = "new",
       setDescription("");
       setMealCounts({});
       
-      notify.success(`✅ Credit sale completed! Opening print windows...`);
+      notify.success(`✅ Credit sale completed with postponed payment! Opening print windows...`);
       
       // Start the print process
       setTimeout(() => {
-        openTwoPrintWindows(finalTotal); // Use finalTotal as totalPaid for credit sales
+        openTwoPrintWindows(finalTotal);
       }, 500);
       
     } catch (error) {
@@ -363,7 +413,7 @@ const CheckoutPanel = ({ ticketCounts, types, onCheckout, onClear, mode = "new",
     if (isCheckingCredit) return "Checking...";
     
     if (creditStatus?.summary?.payment_type === 'CREDIT_ONLY') {
-      return "💳 Checkout with Credit";
+      return "📝 Checkout with Postponed Payment";
     } else if (creditStatus?.summary?.payment_type === 'MIXED_ERROR') {
       return "❌ Mixed Payment Error";
     } else {
@@ -496,14 +546,11 @@ const CheckoutPanel = ({ ticketCounts, types, onCheckout, onClear, mode = "new",
       // Reset the component state
       setDescription("");
       setSelectedMethods([]);
-      setAmounts({ 
-        'الاهلي و مصر': 0, 
-        'OTHER': 0, 
-        'cash': 0, 
-        'vodafone_cash': 0, 
-        'postponed': 0, 
-        'discount': 0 
+      const resetAmounts = {};
+      paymentMethods.forEach(method => {
+        resetAmounts[method.value] = 0;
       });
+      setAmounts(resetAmounts);
       setMealCounts({});
       
       // Show success message with change info if applicable
@@ -636,7 +683,7 @@ const CheckoutPanel = ({ ticketCounts, types, onCheckout, onClear, mode = "new",
     return printWindow;
   };
 
-  // Build receipt data with simple change calculation
+  // Build receipt data with simple change calculation - UPDATED for postponed payment
   const buildReceiptData = (actualTotalPaid = null) => {
     const isCredit = creditStatus?.summary?.payment_type === 'CREDIT_ONLY';
     
@@ -654,7 +701,7 @@ const CheckoutPanel = ({ ticketCounts, types, onCheckout, onClear, mode = "new",
         cashier: cashierName,
         orderId: `#${new Date().getTime().toString().slice(-6)}`
       },
-      description: description.trim() || (isCredit ? 'Credit sale' : ''),
+      description: description.trim() || (isCredit ? 'Credit sale - Postponed payment' : ''),
       items: {
         tickets: selected.map(t => ({
           name: `${t.category} - ${t.subcategory}`,
@@ -680,8 +727,9 @@ const CheckoutPanel = ({ ticketCounts, types, onCheckout, onClear, mode = "new",
         totalPaid,
         changeAmount
       },
+      // Show 'POSTPONED' for credit-linked categories
       payments: isCredit ? [
-        { method: 'CREDIT ACCOUNT', amount: finalTotal }
+        { method: 'POSTPONED (Credit Account)', amount: finalTotal }
       ] : selectedMethods
         .filter(method => method !== 'discount' && getAmount(method) > 0)
         .map(method => ({
@@ -857,7 +905,7 @@ const CheckoutPanel = ({ ticketCounts, types, onCheckout, onClear, mode = "new",
       <Box mt={2} p={3} border="1px solid #00AEEF" borderRadius={2} bgcolor="#E0F7FF">
         <Typography variant="h6" sx={{ color: "#00AEEF", mb: 2 }}>🧾 Order Summary</Typography>
 
-        {/* Credit status message */}
+        {/* Credit status message - UPDATED */}
         {creditStatus && (
           <Box sx={{ mb: 2, p: 1, borderRadius: 1, bgcolor: 
             creditStatus.summary.payment_type === 'CREDIT_ONLY' ? '#e8f5e8' :
@@ -869,7 +917,7 @@ const CheckoutPanel = ({ ticketCounts, types, onCheckout, onClear, mode = "new",
                 creditStatus.summary.payment_type === 'MIXED_ERROR' ? '#d32f2f' : '#1976d2',
               fontWeight: 'bold'
             }}>
-              {creditStatus.summary.payment_type === 'CREDIT_ONLY' && '💳 Credit-enabled tickets - No payment input required'}
+              {creditStatus.summary.payment_type === 'CREDIT_ONLY' && '📝 Credit-enabled tickets - Will use postponed payment'}
               {creditStatus.summary.payment_type === 'CASH_ONLY' && '💵 Cash/Card payment required'}
               {creditStatus.summary.payment_type === 'MIXED_ERROR' && '❌ Cannot mix credit and cash tickets'}
             </Typography>
@@ -1060,53 +1108,16 @@ const CheckoutPanel = ({ ticketCounts, types, onCheckout, onClear, mode = "new",
             color="primary"
             sx={{ mt: 1, display: "flex", flexWrap: "wrap" }}
           >
-            <ToggleButton 
-              value="الاهلي و مصر" 
-              aria-label="visa_bank"
-              sx={{ flex: "1 0 auto", minWidth: "120px" }}
-            >
-              الاهلي و مصر
-            </ToggleButton>
-            
-            <ToggleButton 
-              value="OTHER" 
-              aria-label="visa_other"
-              sx={{ flex: "1 0 auto", minWidth: "100px" }}
-            >
-              OTHER
-            </ToggleButton>
-            
-            <ToggleButton 
-              value="cash" 
-              aria-label="cash"
-              sx={{ flex: "1 0 auto", minWidth: "100px" }}
-            >
-              CASH
-            </ToggleButton>
-            
-            <ToggleButton 
-              value="vodafone_cash" 
-              aria-label="vodafone_cash"
-              sx={{ flex: "1 0 auto", minWidth: "100px" }}
-            >
-              VODAFONE CASH
-            </ToggleButton>
-            
-            <ToggleButton 
-              value="postponed" 
-              aria-label="postponed"
-              sx={{ flex: "1 0 auto", minWidth: "100px" }}
-            >
-              POSTPONED
-            </ToggleButton>
-            
-            <ToggleButton 
-              value="discount" 
-              aria-label="discount"
-              sx={{ flex: "1 0 auto", minWidth: "100px" }}
-            >
-              DISCOUNT
-            </ToggleButton>
+            {paymentMethods.map((method) => (
+              <ToggleButton 
+                key={method.value}
+                value={method.value} 
+                aria-label={method.value}
+                sx={{ flex: "1 0 auto", minWidth: "120px" }}
+              >
+                {method.label.toUpperCase()}
+              </ToggleButton>
+            ))}
           </ToggleButtonGroup>
           
           {/* Discount field if selected */}
