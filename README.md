@@ -132,7 +132,7 @@ README.md       → Project documentation
 
 1. Clone the repository:
    ```bash
-   git clone https://github.com/your-username/akoya-waterpark.git
+   git clone https://github.com/ziadteama/Akoya
    ```
 
 2. Install dependencies:
