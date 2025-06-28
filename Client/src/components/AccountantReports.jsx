@@ -226,6 +226,43 @@ const AccountantReports = () => {
     }
   };
 
+  // New fetch function for credit report
+  const fetchCreditReport = async (shouldFetch = true) => {
+    if (!shouldFetch || !baseUrl) {
+      if (!baseUrl) {
+        setError("API configuration not available");
+        notify.error("API configuration not available");
+      }
+      return;
+    }
+    
+    setLoading(true);
+    setError(null);
+    
+    try {
+      const params = useRange
+        ? { startDate: formatApiDate(fromDate), endDate: formatApiDate(toDate) }
+        : { date: formatApiDate(selectedDate) };
+          
+      const endpoint = useRange
+        ? `${baseUrl}/api/reports/credit-report-range`
+        : `${baseUrl}/api/reports/credit-report`;
+          
+      const { data } = await axios.get(endpoint, { params });
+      
+      setCreditReportData(data);
+      notify.success("Credit report loaded successfully");
+    } catch (error) {
+      console.error("Error fetching credit report:", error);
+      const errorMessage = "Failed to fetch credit report. Please try again.";
+      setError(errorMessage);
+      notify.error(errorMessage);
+      setCreditReportData(null);
+    } finally {
+      setLoading(false);
+    }
+  };
+
   // Modified useEffect to handle report fetching properly
   useEffect(() => {
     const timer = setTimeout(() => {
@@ -233,9 +270,11 @@ const AccountantReports = () => {
         fetchOrdersReport();
       } else if (reportMode === 'tickets' && !ticketsReportData) {
         fetchTicketsReport();
-      } 
-      // For category-sales and credit-report, let their components handle their own fetching
-      // when their data is null (which we set in handleModeChange)
+      } else if (reportMode === 'category-sales' && !categorySalesData) {
+        fetchCategorySalesReport();
+      } else if (reportMode === 'credit-report' && !creditReportData) {
+        fetchCreditReport();
+      }
     }, 300);
     
     return () => clearTimeout(timer);
@@ -551,8 +590,10 @@ const AccountantReports = () => {
       fetchTicketsReport();
     } else if (reportMode === 'category-sales') {
       setCategorySalesData(null);
+      fetchCategorySalesReport();
     } else if (reportMode === 'credit-report') {
       setCreditReportData(null);
+      fetchCreditReport();
     }
   };
 
@@ -1821,6 +1862,8 @@ const AccountantReports = () => {
                   setError={setError}
                   categorySalesData={categorySalesData}
                   setCategorySalesData={setCategorySalesData}
+                  // Pass the fetch function as a prop
+                  fetchData={fetchCategorySalesReport}
                 />
               ) : reportMode === 'credit-report' ? (
                 <CreditReport
@@ -1835,6 +1878,8 @@ const AccountantReports = () => {
                   setError={setError}
                   creditReportData={creditReportData}
                   setCreditReportData={setCreditReportData}
+                  // Pass the fetch function as a prop
+                  fetchData={fetchCreditReport}
                 />
               ) : null}
             </Box>
