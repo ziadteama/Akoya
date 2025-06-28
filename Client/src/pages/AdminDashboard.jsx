@@ -1,10 +1,8 @@
-﻿// Replace the entire AdminDashboard.jsx with this updated version:
-
-import React, { useState, useEffect } from 'react';
+﻿import React, { useState, useEffect } from 'react';
 import { Box, Container, Grid, Paper, Typography, Card, CardContent, 
   Tab, Tabs, IconButton, Menu, MenuItem, Chip, CircularProgress, Divider, 
   useTheme, Drawer, List, ListItem, ListItemIcon, ListItemText, AppBar, 
-  Toolbar, CssBaseline, Button } from '@mui/material';
+  Toolbar, CssBaseline, Button, useMediaQuery, SwipeableDrawer, Fab } from '@mui/material';
 import { styled } from '@mui/material/styles';
 import { LocalizationProvider, DatePicker } from "@mui/x-date-pickers";
 import { AdapterDayjs } from "@mui/x-date-pickers/AdapterDayjs";
@@ -47,23 +45,26 @@ import FileDownloadIcon from '@mui/icons-material/FileDownload';
 import PrintIcon from '@mui/icons-material/Print';
 import FullscreenIcon from '@mui/icons-material/Fullscreen';
 import FullscreenExitIcon from '@mui/icons-material/FullscreenExit';
+import CloseIcon from '@mui/icons-material/Close';
 
 const drawerWidth = 240;
 
-const Main = styled('main', { shouldForwardProp: (prop) => prop !== 'open' })(
-  ({ theme, open }) => ({
+// Responsive Main component
+const Main = styled('main', { shouldForwardProp: (prop) => prop !== 'open' && prop !== 'isMobile' })(
+  ({ theme, open, isMobile }) => ({
     flexGrow: 1,
-    padding: theme.spacing(3),
+    padding: isMobile ? theme.spacing(1) : theme.spacing(3),
+    paddingTop: theme.spacing(1),
     paddingBottom: theme.spacing(10),
     transition: theme.transitions.create('margin', {
       easing: theme.transitions.easing.sharp,
       duration: theme.transitions.duration.leavingScreen,
     }),
-    marginLeft: `-${drawerWidth}px`,
+    marginLeft: isMobile ? 0 : `-${drawerWidth}px`,
     height: '100vh',
     overflowY: 'auto',
     overflowX: 'hidden',
-    ...(open && {
+    ...(!isMobile && open && {
       transition: theme.transitions.create('margin', {
         easing: theme.transitions.easing.easeOut,
         duration: theme.transitions.duration.enteringScreen,
@@ -81,8 +82,11 @@ const DrawerHeader = styled('div')(({ theme }) => ({
   justifyContent: 'flex-end',
 }));
 
-// Custom card for KPIs display
+// Responsive StatsCard component
 const StatsCard = ({ icon, title, value, color, secondaryValue }) => {
+  const theme = useTheme();
+  const isMobile = useMediaQuery(theme.breakpoints.down('sm'));
+  
   return (
     <Card sx={{ 
       height: '100%', 
@@ -92,29 +96,43 @@ const StatsCard = ({ icon, title, value, color, secondaryValue }) => {
       borderRadius: 3,
       transition: 'transform 0.3s, box-shadow 0.3s',
       '&:hover': {
-        transform: 'translateY(-5px)',
+        transform: isMobile ? 'none' : 'translateY(-5px)',
         boxShadow: '0 8px 25px rgba(0, 0, 0, 0.15)',
       }
     }}>
-      <CardContent sx={{ flexGrow: 1, position: 'relative', pt: 2 }}>
+      <CardContent sx={{ flexGrow: 1, position: 'relative', pt: 2, pb: 2 }}>
         <Box sx={{ 
           position: 'absolute', 
-          top: 16, 
-          right: 16, 
+          top: isMobile ? 8 : 16, 
+          right: isMobile ? 8 : 16, 
           backgroundColor: `${color}20`, 
           borderRadius: '50%',
-          p: 1.2
+          p: isMobile ? 0.8 : 1.2
         }}>
-          {icon}
+          {React.cloneElement(icon, { 
+            sx: { 
+              fontSize: isMobile ? 20 : 28,
+              color: color
+            }
+          })}
         </Box>
-        <Typography variant="subtitle2" sx={{ color: 'text.secondary', mb: 1 }}>
+        <Typography 
+          variant={isMobile ? "caption" : "subtitle2"} 
+          sx={{ color: 'text.secondary', mb: 1 }}
+        >
           {title}
         </Typography>
-        <Typography variant="h4" sx={{ fontWeight: 'bold', mb: 0.5 }}>
+        <Typography 
+          variant={isMobile ? "h6" : "h4"} 
+          sx={{ fontWeight: 'bold', mb: 0.5 }}
+        >
           {value}
         </Typography>
         {secondaryValue && (
-          <Typography variant="body2" color="text.secondary">
+          <Typography 
+            variant={isMobile ? "caption" : "body2"} 
+            color="text.secondary"
+          >
             {secondaryValue}
           </Typography>
         )}
@@ -126,6 +144,8 @@ const StatsCard = ({ icon, title, value, color, secondaryValue }) => {
 const AdminDashboard = () => {
   const theme = useTheme();
   const navigate = useNavigate();
+  const isMobile = useMediaQuery(theme.breakpoints.down('md'));
+  const isSmallMobile = useMediaQuery(theme.breakpoints.down('sm'));
 
   const baseUrl = window.runtimeConfig?.apiBaseUrl;
 
@@ -133,7 +153,7 @@ const AdminDashboard = () => {
   const [loading, setLoading] = useState(true);
   const [activeTab, setActiveTab] = useState(0);
   const [dateRange, setDateRange] = useState('week');
-  const [drawerOpen, setDrawerOpen] = useState(true);
+  const [drawerOpen, setDrawerOpen] = useState(!isMobile); // Default closed on mobile
   const [activePage, setActivePage] = useState('dashboard');
   const [fromDate, setFromDate] = useState(dayjs().subtract(7, 'day'));
   const [toDate, setToDate] = useState(dayjs());
@@ -144,21 +164,20 @@ const AdminDashboard = () => {
     totalRevenue: "0.00",
     ticketsCount: "0",
     mealsCount: "0",
-    avgTicketValue: "0.00"  // Changed from avgOrderValue
+    avgTicketValue: "0.00"
   });
+
+  // Close drawer on mobile when navigating
+  useEffect(() => {
+    if (isMobile) {
+      setDrawerOpen(false);
+    }
+  }, [isMobile]);
 
   // Define chart colors
   const COLORS = [
-    '#00B4D8', // Primary blue
-    '#0077B6', // Darker blue
-    '#00BFFF', // Sky blue
-    '#90E0EF', // Light blue
-    '#CAF0F8', // Very light blue
-    '#005F73', // Deep blue
-    '#0094C6', // Medium blue
-    '#48CAE4', // Bright blue
-    '#ADE8F4', // Pale blue
-    '#023E8A', // Navy blue
+    '#00B4D8', '#0077B6', '#00BFFF', '#90E0EF', '#CAF0F8', 
+    '#005F73', '#0094C6', '#48CAE4', '#ADE8F4', '#023E8A',
   ];
 
   // Fullscreen toggle function
@@ -207,18 +226,12 @@ const AdminDashboard = () => {
         endDate: toDate.format("YYYY-MM-DD") 
       };
       
-      console.log("Fetching data with params:", params);
-      
       const response = await axios.get(`${baseUrl}/api/orders/range-report`, { params });
-      
-      console.log("API response:", response);
       
       if (response.data && Array.isArray(response.data)) {
         setOrders(response.data);
         processOrderData(response.data);
-        console.log("Orders set:", response.data.length);
       } else {
-        console.error("Unexpected data format:", response.data);
         setError("Received unexpected data format from server");
         setOrders([]);
       }
@@ -230,7 +243,7 @@ const AdminDashboard = () => {
         totalRevenue: "0.00",
         ticketsCount: "0",
         mealsCount: "0",
-        avgTicketValue: "0.00"  // Changed from avgOrderValue
+        avgTicketValue: "0.00"
       });
     } finally {
       setLoading(false);
@@ -244,32 +257,25 @@ const AdminDashboard = () => {
         totalRevenue: "0.00",
         ticketsCount: "0",
         mealsCount: "0",
-        avgTicketValue: "0.00"  // Changed from avgOrderValue
+        avgTicketValue: "0.00"
       });
       return;
     }
 
-    // Calculate total revenue (excluding discounts)
     let totalRevenue = 0;
+    let ticketsCount = 0;
+    let mealsCount = 0;
     
     data.forEach(order => {
       const orderAmount = parseFloat(order.total_amount || 0);
       totalRevenue += orderAmount;
-    });
-    
-    // Count tickets
-    let ticketsCount = 0;
-    data.forEach(order => {
+      
       if (order.tickets) {
         order.tickets.forEach(ticket => {
           ticketsCount += (ticket.quantity || 0);
         });
       }
-    });
-    
-    // Count meals
-    let mealsCount = 0;
-    data.forEach(order => {
+      
       if (order.meals) {
         order.meals.forEach(meal => {
           mealsCount += (meal.quantity || 0);
@@ -277,14 +283,13 @@ const AdminDashboard = () => {
       }
     });
     
-    // Calculate average ticket value (total revenue divided by tickets count)
     const avgTicketValue = ticketsCount ? totalRevenue / ticketsCount : 0;
     
     setKpiData({
       totalRevenue: totalRevenue.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }),
       ticketsCount: ticketsCount.toString(),
       mealsCount: mealsCount.toString(),
-      avgTicketValue: avgTicketValue.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })  // Changed from avgOrderValue
+      avgTicketValue: avgTicketValue.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
     });
   };
 
@@ -301,6 +306,9 @@ const AdminDashboard = () => {
   // Handle navigation
   const handleNavigation = (page) => {
     setActivePage(page);
+    if (isMobile) {
+      setDrawerOpen(false); // Close drawer on mobile after navigation
+    }
   };
   
   // Handle date menu click
@@ -452,15 +460,11 @@ const AdminDashboard = () => {
     { text: 'Reports', icon: <AttachMoneyIcon />, page: 'reports' },
   ];
 
-  // Format data for revenue line chart
+  // Format data for charts
   const revenueData = getRevenueByDateData();
   const lineChartData = revenueData.data;
   const lineChartLabels = revenueData.xAxis;
-
-  // Format data for payment methods pie chart
   const paymentData = getPaymentMethodsData();
-
-  // Format data for ticket categories bar chart
   const ticketData = getTicketCategoriesData();
 
   // Add logout handler function
@@ -471,6 +475,49 @@ const AdminDashboard = () => {
     localStorage.removeItem("userId");
     navigate("/");
   };
+
+  // Responsive drawer component
+  const DrawerContent = () => (
+    <>
+      <DrawerHeader sx={{ 
+        backgroundColor: '#0077B6', 
+        justifyContent: 'space-between',
+        flexDirection: isMobile ? 'row-reverse' : 'row'
+      }}>
+        <Typography variant={isMobile ? "subtitle1" : "h6"} sx={{ fontWeight: 'bold', px: 2 }}>
+          Admin Console
+        </Typography>
+        <IconButton onClick={handleDrawerToggle} sx={{ color: 'white' }}>
+          {isMobile ? <CloseIcon /> : <ChevronLeftIcon />}
+        </IconButton>
+      </DrawerHeader>
+      <Divider sx={{ backgroundColor: 'rgba(255,255,255,0.2)' }} />
+      <List sx={{ px: 1 }}>
+        {menuItems.map((item) => (
+          <ListItem 
+            button 
+            key={item.text}
+            onClick={() => handleNavigation(item.page)}
+            sx={{ 
+              mb: 0.5,
+              borderRadius: '0 25px 25px 0',
+              pl: 2,
+              py: isMobile ? 1.5 : 1,
+              backgroundColor: activePage === item.page ? 'rgba(255,255,255,0.2)' : 'transparent',
+              '&:hover': {
+                backgroundColor: 'rgba(255,255,255,0.1)',
+              }
+            }}
+          >
+            <ListItemIcon sx={{ color: 'white', minWidth: 40 }}>
+              {item.icon}
+            </ListItemIcon>
+            <ListItemText primary={item.text} />
+          </ListItem>
+        ))}
+      </List>
+    </>
+  );
   
   return (
     <LocalizationProvider dateAdapter={AdapterDayjs}>
@@ -479,14 +526,15 @@ const AdminDashboard = () => {
         <AppBar
           position="fixed"
           sx={{
-            width: { sm: `calc(100% - ${drawerOpen ? drawerWidth : 0}px)` },
-            ml: { sm: `${drawerOpen ? drawerWidth : 0}px` },
+            width: { sm: `calc(100% - ${!isMobile && drawerOpen ? drawerWidth : 0}px)` },
+            ml: { sm: `${!isMobile && drawerOpen ? drawerWidth : 0}px` },
             transition: theme.transitions.create(['margin', 'width'], {
               easing: theme.transitions.easing.sharp,
               duration: theme.transitions.duration.leavingScreen,
             }),
             bgcolor: 'white',
             color: 'primary.main',
+            zIndex: theme.zIndex.drawer + 1,
           }}
         >
           <Toolbar>
@@ -499,25 +547,32 @@ const AdminDashboard = () => {
             >
               <MenuIcon />
             </IconButton>
-            <Typography variant="h6" noWrap component="div" sx={{ flexGrow: 1 }}>
+            <Typography 
+              variant={isMobile ? "subtitle1" : "h6"} 
+              noWrap 
+              component="div" 
+              sx={{ flexGrow: 1 }}
+            >
               Hola, {localStorage.getItem('userName')}
             </Typography>
             
-            {/* Fullscreen Button */}
-            <IconButton 
-              color="inherit" 
-              aria-label="toggle fullscreen"
-              onClick={toggleFullscreen}
-              sx={{
-                mr: 1,
-                '&:hover': {
-                  color: '#00B4D8',
-                  backgroundColor: 'rgba(0, 180, 216, 0.08)'
-                },
-              }}
-            >
-              {isFullscreen ? <FullscreenExitIcon /> : <FullscreenIcon />}
-            </IconButton>
+            {/* Hide fullscreen on mobile */}
+            {!isMobile && (
+              <IconButton 
+                color="inherit" 
+                aria-label="toggle fullscreen"
+                onClick={toggleFullscreen}
+                sx={{
+                  mr: 1,
+                  '&:hover': {
+                    color: '#00B4D8',
+                    backgroundColor: 'rgba(0, 180, 216, 0.08)'
+                  },
+                }}
+              >
+                {isFullscreen ? <FullscreenExitIcon /> : <FullscreenIcon />}
+              </IconButton>
+            )}
             
             <IconButton 
               color="inherit" 
@@ -534,80 +589,82 @@ const AdminDashboard = () => {
             </IconButton>
           </Toolbar>
         </AppBar>
-        <Drawer
-          sx={{
-            width: drawerWidth,
-            flexShrink: 0,
-            '& .MuiDrawer-paper': {
+
+        {/* Responsive Drawer */}
+        {isMobile ? (
+          <SwipeableDrawer
+            anchor="left"
+            open={drawerOpen}
+            onClose={handleDrawerToggle}
+            onOpen={handleDrawerToggle}
+            sx={{
+              '& .MuiDrawer-paper': {
+                width: drawerWidth,
+                backgroundColor: '#00B4D8',
+                color: 'white',
+              },
+            }}
+          >
+            <DrawerContent />
+          </SwipeableDrawer>
+        ) : (
+          <Drawer
+            sx={{
               width: drawerWidth,
-              boxSizing: 'border-box',
-              backgroundColor: '#00B4D8',
-              color: 'white',
-            },
-          }}
-          variant="persistent"
-          anchor="left"
-          open={drawerOpen}
-        >
-          <DrawerHeader sx={{ backgroundColor: '#0077B6', justifyContent: 'space-between' }}>
-            <Typography variant="h6" sx={{ fontWeight: 'bold', px: 2 }}>
-              Admin Console
-            </Typography>
-            <IconButton onClick={handleDrawerToggle} sx={{ color: 'white' }}>
-              <ChevronLeftIcon />
-            </IconButton>
-          </DrawerHeader>
-          <Divider sx={{ backgroundColor: 'rgba(255,255,255,0.2)' }} />
-          <List>
-            {menuItems.map((item) => (
-              <ListItem 
-                button 
-                key={item.text}
-                onClick={() => handleNavigation(item.page)}
-                sx={{ 
-                  mb: 0.5,
-                  borderRadius: '0 25px 25px 0',
-                  pl: 3,
-                  backgroundColor: activePage === item.page ? 'rgba(255,255,255,0.2)' : 'transparent',
-                  '&:hover': {
-                    backgroundColor: 'rgba(255,255,255,0.1)',
-                  }
-                }}
-              >
-                <ListItemIcon sx={{ color: 'white' }}>
-                  {item.icon}
-                </ListItemIcon>
-                <ListItemText primary={item.text} />
-              </ListItem>
-            ))}
-          </List>
-        </Drawer>
-        <Main open={drawerOpen}>
+              flexShrink: 0,
+              '& .MuiDrawer-paper': {
+                width: drawerWidth,
+                boxSizing: 'border-box',
+                backgroundColor: '#00B4D8',
+                color: 'white',
+              },
+            }}
+            variant="persistent"
+            anchor="left"
+            open={drawerOpen}
+          >
+            <DrawerContent />
+          </Drawer>
+        )}
+
+        <Main open={drawerOpen} isMobile={isMobile}>
           <DrawerHeader />
           
           {activePage === 'dashboard' && (
             <>
-              {/* Date Range Selector */}
+              {/* Responsive Date Range Selector */}
               <Box sx={{ 
                 display: 'flex', 
+                flexDirection: isSmallMobile ? 'column' : 'row',
                 justifyContent: 'space-between',
-                alignItems: 'center',
-                mb: 3
+                alignItems: isSmallMobile ? 'stretch' : 'center',
+                mb: 3,
+                gap: isSmallMobile ? 2 : 0
               }}>
-                <Typography variant="h5" fontWeight="bold">
+                <Typography 
+                  variant={isMobile ? "h6" : "h5"} 
+                  fontWeight="bold"
+                >
                   Dashboard Overview
                 </Typography>
                 
-                <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
+                <Box sx={{ 
+                  display: 'flex', 
+                  alignItems: 'center', 
+                  gap: 1,
+                  flexWrap: isSmallMobile ? 'wrap' : 'nowrap'
+                }}>
                   <Button
                     color="primary"
                     startIcon={<DateRangeIcon />}
                     onClick={handleDateMenuClick}
+                    size={isMobile ? "small" : "medium"}
                     sx={{ 
                       backgroundColor: '#f0f9ff', 
                       borderRadius: 2, 
                       textTransform: 'none',
-                      px: 2
+                      px: isSmallMobile ? 1 : 2,
+                      fontSize: isSmallMobile ? '0.75rem' : 'inherit'
                     }}
                   >
                     {dateRange === 'today' ? 'Today' : 
@@ -619,7 +676,8 @@ const AdminDashboard = () => {
                   </Button>
                   
                   <Button 
-                    onClick={fetchData} 
+                    onClick={fetchData}
+                    size={isMobile ? "small" : "medium"}
                     sx={{ 
                       minWidth: 40, 
                       width: 40, 
@@ -630,100 +688,91 @@ const AdminDashboard = () => {
                   >
                     <RefreshIcon color="primary" />
                   </Button>
-                  
-                  <Menu
-                    anchorEl={dateMenuAnchorEl}
-                    open={Boolean(dateMenuAnchorEl)}
-                    onClose={handleDateMenuClose}
-                    PaperProps={{
-                      sx: { minWidth: 180, boxShadow: '0 4px 20px rgba(0, 0, 0, 0.1)' }
-                    }}
-                  >
-                    <MenuItem onClick={() => handleDateRangeChange('today')}>
-                      Today
-                    </MenuItem>
-                    <MenuItem onClick={() => handleDateRangeChange('yesterday')}>
-                      Yesterday
-                    </MenuItem>
-                    <MenuItem onClick={() => handleDateRangeChange('week')}>
-                      Last 7 Days
-                    </MenuItem>
-                    <MenuItem onClick={() => handleDateRangeChange('month')}>
-                      Last 30 Days
-                    </MenuItem>
-                    <MenuItem onClick={() => handleDateRangeChange('quarter')}>
-                      Last 90 Days
-                    </MenuItem>
-                    <MenuItem onClick={() => handleDateRangeChange('year')}>
-                      Last Year
-                    </MenuItem>
-                    <Divider />
-                    <Box sx={{ px: 2, py: 1 }}>
-                      <Typography variant="subtitle2" sx={{ mb: 1 }}>
-                        Custom Range
-                      </Typography>
-                      <Box sx={{ display: 'flex', gap: 1, mb: 1 }}>
-                        <DatePicker 
-                          label="From" 
-                          value={fromDate} 
-                          onChange={handleFromDateChange}
-                          slotProps={{ textField: { size: 'small' } }}
-                        />
-                      </Box>
-                      <Box sx={{ display: 'flex', gap: 1 }}>
-                        <DatePicker 
-                          label="To" 
-                          value={toDate} 
-                          onChange={handleToDateChange}
-                          slotProps={{ textField: { size: 'small' } }}
-                        />
-                      </Box>
-                      <Box sx={{ mt: 1, display: 'flex', justifyContent: 'flex-end' }}>
-                        <Button 
-                          variant="contained" 
-                          size="small" 
-                          onClick={handleDateMenuClose}
-                        >
-                          Apply
-                        </Button>
-                      </Box>
-                    </Box>
-                  </Menu>
                 </Box>
               </Box>
 
-              {/* KPI Section */}
-              <Grid container spacing={3} sx={{ mb: 4 }}>
-                <Grid item xs={12} md={3}>
+              {/* Responsive Menu */}
+              <Menu
+                anchorEl={dateMenuAnchorEl}
+                open={Boolean(dateMenuAnchorEl)}
+                onClose={handleDateMenuClose}
+                PaperProps={{
+                  sx: { 
+                    minWidth: 180, 
+                    boxShadow: '0 4px 20px rgba(0, 0, 0, 0.1)',
+                    maxWidth: isMobile ? '90vw' : 'none'
+                  }
+                }}
+              >
+                <MenuItem onClick={() => handleDateRangeChange('today')}>Today</MenuItem>
+                <MenuItem onClick={() => handleDateRangeChange('yesterday')}>Yesterday</MenuItem>
+                <MenuItem onClick={() => handleDateRangeChange('week')}>Last 7 Days</MenuItem>
+                <MenuItem onClick={() => handleDateRangeChange('month')}>Last 30 Days</MenuItem>
+                <MenuItem onClick={() => handleDateRangeChange('quarter')}>Last 90 Days</MenuItem>
+                <MenuItem onClick={() => handleDateRangeChange('year')}>Last Year</MenuItem>
+                <Divider />
+                <Box sx={{ px: 2, py: 1 }}>
+                  <Typography variant="subtitle2" sx={{ mb: 1 }}>
+                    Custom Range
+                  </Typography>
+                  <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1, mb: 1 }}>
+                    <DatePicker 
+                      label="From" 
+                      value={fromDate} 
+                      onChange={handleFromDateChange}
+                      slotProps={{ textField: { size: 'small', fullWidth: true } }}
+                    />
+                    <DatePicker 
+                      label="To" 
+                      value={toDate} 
+                      onChange={handleToDateChange}
+                      slotProps={{ textField: { size: 'small', fullWidth: true } }}
+                    />
+                  </Box>
+                  <Box sx={{ display: 'flex', justifyContent: 'flex-end' }}>
+                    <Button 
+                      variant="contained" 
+                      size="small" 
+                      onClick={handleDateMenuClose}
+                    >
+                      Apply
+                    </Button>
+                  </Box>
+                </Box>
+              </Menu>
+
+              {/* Responsive KPI Section */}
+              <Grid container spacing={isMobile ? 2 : 3} sx={{ mb: 4 }}>
+                <Grid item xs={6} md={3}>
                   <StatsCard 
-                    icon={<AttachMoneyIcon sx={{ color: '#00B4D8', fontSize: 28 }} />}
+                    icon={<AttachMoneyIcon />}
                     title="Total Revenue"
                     value={`$${kpiData.totalRevenue}`}
                     color="#00B4D8"
                     secondaryValue={`${orders.length} orders`}
                   />
                 </Grid>
-                <Grid item xs={12} md={3}>
+                <Grid item xs={6} md={3}>
                   <StatsCard 
-                    icon={<ConfirmationNumberIcon sx={{ color: '#0077B6', fontSize: 28 }} />}
+                    icon={<ConfirmationNumberIcon />}
                     title="Tickets Sold"
                     value={kpiData.ticketsCount}
                     color="#0077B6"
                     secondaryValue="All categories"
                   />
                 </Grid>
-                <Grid item xs={12} md={3}>
+                <Grid item xs={6} md={3}>
                   <StatsCard 
-                    icon={<RestaurantIcon sx={{ color: '#00B4D8', fontSize: 28 }} />}
+                    icon={<RestaurantIcon />}
                     title="Meals Sold"
                     value={kpiData.mealsCount}
                     color="#00B4D8"
                     secondaryValue="All types"
                   />
                 </Grid>
-                <Grid item xs={12} md={3}>
+                <Grid item xs={6} md={3}>
                   <StatsCard 
-                    icon={<ConfirmationNumberIcon sx={{ color: '#0077B6', fontSize: 28 }} />}
+                    icon={<ConfirmationNumberIcon />}
                     title="Avg. Ticket Value"
                     value={`$${kpiData.avgTicketValue}`}
                     color="#0077B6"
@@ -748,24 +797,28 @@ const AdminDashboard = () => {
                   </Button>
                 </Paper>
               ) : (
-                /* Charts Section */
-                <Grid container spacing={3}>
+                /* Responsive Charts Section */
+                <Grid container spacing={isMobile ? 2 : 3}>
                   {/* Revenue Over Time */}
-                  <Grid item xs={12} md={8}>
-                    <Paper sx={{ p: 3, height: '100%', borderRadius: 3, boxShadow: '0 4px 20px rgba(0, 0, 0, 0.1)' }}>
+                  <Grid item xs={12} lg={8}>
+                    <Paper sx={{ p: isMobile ? 2 : 3, height: '100%', borderRadius: 3, boxShadow: '0 4px 20px rgba(0, 0, 0, 0.1)' }}>
                       <Box sx={{ display: 'flex', justifyContent: 'space-between', mb: 2 }}>
-                        <Typography variant="h6" sx={{ fontWeight: 'bold' }}>Revenue Over Time</Typography>
-                        <Box>
-                          <IconButton size="small">
-                            <FileDownloadIcon fontSize="small" />
-                          </IconButton>
-                          <IconButton size="small">
-                            <PrintIcon fontSize="small" />
-                          </IconButton>
-                        </Box>
+                        <Typography variant={isMobile ? "subtitle1" : "h6"} sx={{ fontWeight: 'bold' }}>
+                          Revenue Over Time
+                        </Typography>
+                        {!isMobile && (
+                          <Box>
+                            <IconButton size="small">
+                              <FileDownloadIcon fontSize="small" />
+                            </IconButton>
+                            <IconButton size="small">
+                              <PrintIcon fontSize="small" />
+                            </IconButton>
+                          </Box>
+                        )}
                       </Box>
                       
-                      <Box sx={{ height: 300, width: '100%' }}>
+                      <Box sx={{ height: isMobile ? 250 : 300, width: '100%' }}>
                         {lineChartData && lineChartData.length > 0 ? (
                           <LineChart
                             xAxis={[{ 
@@ -779,12 +832,19 @@ const AdminDashboard = () => {
                               color: '#00B4D8',
                               valueFormatter: (value) => `$${value}`
                             }]}
-                            height={300}
-                            margin={{ top: 20, bottom: 30, left: 40, right: 20 }}
+                            height={isMobile ? 250 : 300}
+                            margin={{ 
+                              top: 20, 
+                              bottom: 30, 
+                              left: isMobile ? 30 : 40, 
+                              right: isMobile ? 10 : 20 
+                            }}
                           />
                         ) : (
                           <Box sx={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '100%' }}>
-                            <Typography color="text.secondary">No revenue data available for the selected period</Typography>
+                            <Typography color="text.secondary" textAlign="center">
+                              No revenue data available for the selected period
+                            </Typography>
                           </Box>
                         )}
                       </Box>
@@ -792,11 +852,13 @@ const AdminDashboard = () => {
                   </Grid>
                   
                   {/* Payment Methods */}
-                  <Grid item xs={12} md={4}>
-                    <Paper sx={{ p: 3, height: '100%', borderRadius: 3, boxShadow: '0 4px 20px rgba(0, 0, 0, 0.1)' }}>
-                      <Typography variant="h6" sx={{ mb: 2, fontWeight: 'bold' }}>Payment Methods</Typography>
+                  <Grid item xs={12} lg={4}>
+                    <Paper sx={{ p: isMobile ? 2 : 3, height: '100%', borderRadius: 3, boxShadow: '0 4px 20px rgba(0, 0, 0, 0.1)' }}>
+                      <Typography variant={isMobile ? "subtitle1" : "h6"} sx={{ mb: 2, fontWeight: 'bold' }}>
+                        Payment Methods
+                      </Typography>
                       <Box sx={{ 
-                        height: 300, 
+                        height: isMobile ? 250 : 300, 
                         width: '100%',
                         display: 'flex',
                         justifyContent: 'center',
@@ -810,22 +872,27 @@ const AdminDashboard = () => {
                                 data: paymentData,
                                 highlightScope: { faded: 'global', highlighted: 'item' },
                                 faded: { innerRadius: 30, additionalRadius: -30, color: 'gray' },
-                                outerRadius: 80,
-                                innerRadius: 20,
+                                outerRadius: isMobile ? 60 : 80,
+                                innerRadius: isMobile ? 15 : 20,
                               }
                             ]}
-                            width={300}
-                            height={300}
+                            width={isMobile ? 280 : 300}
+                            height={isMobile ? 250 : 300}
                             slotProps={{
                               legend: {
                                 direction: 'column',
                                 position: { vertical: 'bottom', horizontal: 'middle' },
                                 padding: 0,
+                                labelStyle: {
+                                  fontSize: isMobile ? 10 : 12,
+                                }
                               }
                             }}
                           />
                         ) : (
-                          <Typography color="text.secondary">No payment data available for the selected period</Typography>
+                          <Typography color="text.secondary" textAlign="center">
+                            No payment data available for the selected period
+                          </Typography>
                         )}
                       </Box>
                     </Paper>
@@ -833,9 +900,11 @@ const AdminDashboard = () => {
                   
                   {/* Ticket Categories */}
                   <Grid item xs={12} md={6}>
-                    <Paper sx={{ p: 3, height: '100%', borderRadius: 3, boxShadow: '0 4px 20px rgba(0, 0, 0, 0.1)' }}>
-                      <Typography variant="h6" sx={{ mb: 2, fontWeight: 'bold' }}>Ticket Categories</Typography>
-                      <Box sx={{ height: 300, width: '100%' }}>
+                    <Paper sx={{ p: isMobile ? 2 : 3, height: '100%', borderRadius: 3, boxShadow: '0 4px 20px rgba(0, 0, 0, 0.1)' }}>
+                      <Typography variant={isMobile ? "subtitle1" : "h6"} sx={{ mb: 2, fontWeight: 'bold' }}>
+                        Ticket Categories
+                      </Typography>
+                      <Box sx={{ height: isMobile ? 250 : 300, width: '100%' }}>
                         {ticketData && ticketData.data.length > 0 ? (
                           <BarChart
                             xAxis={[{ 
@@ -850,12 +919,19 @@ const AdminDashboard = () => {
                                 valueFormatter: (value) => `${value} tickets`
                               }
                             ]}
-                            height={300}
-                            margin={{ top: 20, bottom: 30, left: 40, right: 20 }}
+                            height={isMobile ? 250 : 300}
+                            margin={{ 
+                              top: 20, 
+                              bottom: 30, 
+                              left: isMobile ? 30 : 40, 
+                              right: isMobile ? 10 : 20 
+                            }}
                           />
                         ) : (
                           <Box sx={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '100%' }}>
-                            <Typography color="text.secondary">No ticket data available for the selected period</Typography>
+                            <Typography color="text.secondary" textAlign="center">
+                              No ticket data available for the selected period
+                            </Typography>
                           </Box>
                         )}
                       </Box>
@@ -864,9 +940,11 @@ const AdminDashboard = () => {
                   
                   {/* Recent Orders */}
                   <Grid item xs={12} md={6}>
-                    <Paper sx={{ p: 3, height: '100%', borderRadius: 3, boxShadow: '0 4px 20px rgba(0, 0, 0, 0.1)' }}>
+                    <Paper sx={{ p: isMobile ? 2 : 3, height: '100%', borderRadius: 3, boxShadow: '0 4px 20px rgba(0, 0, 0, 0.1)' }}>
                       <Box sx={{ display: 'flex', justifyContent: 'space-between', mb: 2 }}>
-                        <Typography variant="h6" fontWeight="bold">Recent Orders</Typography>
+                        <Typography variant={isMobile ? "subtitle1" : "h6"} fontWeight="bold">
+                          Recent Orders
+                        </Typography>
                         <Button 
                           variant="text" 
                           size="small" 
@@ -877,7 +955,9 @@ const AdminDashboard = () => {
                       </Box>
                       {orders.length === 0 ? (
                         <Box sx={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: 240 }}>
-                          <Typography color="text.secondary">No recent orders available for the selected period</Typography>
+                          <Typography color="text.secondary" textAlign="center">
+                            No recent orders available for the selected period
+                          </Typography>
                         </Box>
                       ) : (
                         <Box>
@@ -891,24 +971,24 @@ const AdminDashboard = () => {
                                   display: 'flex',
                                   justifyContent: 'space-between',
                                   alignItems: 'center',
-                                  p: 1.5,
+                                  p: isMobile ? 1 : 1.5,
                                   borderBottom: '1px solid #f0f0f0',
                                   '&:last-child': { borderBottom: 'none' }
                                 }}
                               >
                                 <Box>
-                                  <Typography variant="subtitle2" fontWeight="bold">
+                                  <Typography variant={isMobile ? "body2" : "subtitle2"} fontWeight="bold">
                                     Order #{order.order_id}
                                   </Typography>
-                                  <Typography variant="body2" color="text.secondary">
+                                  <Typography variant={isMobile ? "caption" : "body2"} color="text.secondary">
                                     {new Date(order.created_at).toLocaleString()}
                                   </Typography>
                                 </Box>
                                 <Box>
-                                  <Typography variant="subtitle2" fontWeight="bold">
+                                  <Typography variant={isMobile ? "body2" : "subtitle2"} fontWeight="bold">
                                     ${orderTotal.toFixed(2)}
                                   </Typography>
-                                  <Typography variant="body2" color="text.secondary" align="right">
+                                  <Typography variant={isMobile ? "caption" : "body2"} color="text.secondary" align="right">
                                     {order.user_name}
                                   </Typography>
                                 </Box>
@@ -936,11 +1016,11 @@ const AdminDashboard = () => {
            activePage !== 'meals' && 
            activePage !== 'categories' &&
            activePage !== 'reports' && (
-            <Box sx={{ p: 3 }}>
-              <Typography variant="h4" sx={{ mb: 3, fontWeight: 'bold' }}>
+            <Box sx={{ p: isMobile ? 2 : 3 }}>
+              <Typography variant={isMobile ? "h5" : "h4"} sx={{ mb: 3, fontWeight: 'bold' }}>
                 {activePage.charAt(0).toUpperCase() + activePage.slice(1)}
               </Typography>
-              <Paper sx={{ p: 3, borderRadius: 3 }}>
+              <Paper sx={{ p: isMobile ? 2 : 3, borderRadius: 3 }}>
                 <Typography variant="body1">
                   This is the {activePage} page content. In a real application, this would be a separate component with specific functionality for {activePage}.
                 </Typography>
