@@ -40,6 +40,8 @@ const CategorySalesReport = ({
 }) => {
   const [expandedCategories, setExpandedCategories] = useState({});
   const [selectedCategoryFilter, setSelectedCategoryFilter] = useState('all');
+  
+  // FIX: Use consistent baseUrl pattern
   const baseUrl = window.runtimeConfig?.apiBaseUrl;
 
   const toggleCategoryExpansion = (category) => {
@@ -77,87 +79,7 @@ const CategorySalesReport = ({
     return methodMappings[normalizedMethod] || method || 'غير محدد';
   };
 
-  const exportCategorySalesCSV = () => {
-    if (!categorySalesData || !categorySalesData.categories) {
-      notify.warning("No category sales data to export");
-      return;
-    }
-
-    const escapeCSV = (field) => {
-      if (field === null || field === undefined) return '';
-      const str = String(field);
-      if (str.includes('"') || str.includes(',') || str.includes('\n') || str.includes('\r')) {
-        return `"${str.replace(/"/g, '""')}"`;
-      }
-      return str;
-    };
-
-    let csvContent = "\uFEFF";
-    csvContent += useRange
-      ? `Category Sales Report from ${formatDisplayDate(fromDate)} to ${formatDisplayDate(toDate)}\r\n\r\n`
-      : `Category Sales Report for ${formatDisplayDate(selectedDate)}\r\n\r\n`;
-
-    // Summary section
-    csvContent += `SUMMARY\r\n`;
-    csvContent += `Total Categories,${categorySalesData.summary.categories_count}\r\n`;
-    csvContent += `Total Tickets Sold,${categorySalesData.summary.total_tickets_sold}\r\n`;
-    csvContent += `Total Revenue (EGP),${categorySalesData.summary.total_revenue.toFixed(2)}\r\n`;
-    if (categorySalesData.summary.total_payments_verification) {
-      csvContent += `Total Payments Verification (EGP),${categorySalesData.summary.total_payments_verification.toFixed(2)}\r\n`;
-    }
-    csvContent += `\r\n`;
-
-    // Category details header
-    csvContent += `CATEGORY BREAKDOWN\r\n`;
-    csvContent += `Category Name,Tickets Sold,Revenue (EGP),Linked Categories\r\n`;
-
-    // Process each category
-    categorySalesData.categories.forEach(category => {
-      // FIX: Handle multiple linked categories by separating them with semicolons instead of commas
-      const linkedCategoriesText = category.linked_categories && category.linked_categories.length > 0
-        ? category.linked_categories.map(linkedCat => linkedCat.category_name).join('; ') // Use semicolon separator
-        : 'None';
-
-      csvContent += `${escapeCSV(category.category_name)},${category.tickets_sold},${category.total_revenue.toFixed(2)},${escapeCSV(linkedCategoriesText)}\r\n`;
-    });
-
-    // Subcategory breakdown if available
-    if (categorySalesData.categories.some(cat => cat.subcategories && cat.subcategories.length > 0)) {
-      csvContent += `\r\nSUBCATEGORY BREAKDOWN\r\n`;
-      csvContent += `Category,Subcategory,Tickets Sold,Revenue (EGP)\r\n`;
-
-      categorySalesData.categories.forEach(category => {
-        if (category.subcategories && category.subcategories.length > 0) {
-          category.subcategories.forEach(sub => {
-            csvContent += `${escapeCSV(category.category_name)},${escapeCSV(sub.subcategory)},${sub.tickets_sold},${sub.total_revenue.toFixed(2)}\r\n`;
-          });
-        }
-      });
-    }
-
-    // Credit account breakdown if available
-    if (categorySalesData.categories.some(cat => cat.credit_accounts && cat.credit_accounts.length > 0)) {
-      csvContent += `\r\nCREDIT ACCOUNT USAGE BREAKDOWN\r\n`;
-      csvContent += `Category,Credit Account Name,Tickets Purchased,Credit Used (EGP)\r\n`;
-
-      categorySalesData.categories.forEach(category => {
-        if (category.credit_accounts && category.credit_accounts.length > 0) {
-          category.credit_accounts.forEach(account => {
-            csvContent += `${escapeCSV(category.category_name)},${escapeCSV(account.account_name)},${account.tickets_purchased},${account.credit_used.toFixed(2)}\r\n`;
-          });
-        }
-      });
-    }
-
-    const filename = useRange
-      ? `Category_Sales_${formatApiDate(fromDate)}_to_${formatApiDate(toDate)}.csv`
-      : `Category_Sales_${formatApiDate(selectedDate)}.csv`;
-
-    const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" });
-    saveAs(blob, filename);
-    notify.success("Category Sales CSV exported successfully!");
-  };
-
+  // FIX: Update the fetchCategorySalesReport function
   const fetchCategorySalesReport = async (shouldFetch = true) => {
     if (!shouldFetch || !baseUrl) {
       if (!baseUrl) {
@@ -177,6 +99,14 @@ const CategorySalesReport = ({
     setError(null);
     
     try {
+      // FIX: Add authentication token
+      const token = localStorage.getItem('authToken');
+      if (!token) {
+        setError('Authentication required');
+        notify.error('Please log in to access this report');
+        return;
+      }
+
       const params = new URLSearchParams();
       if (useRange) {
         params.append('startDate', formatApiDate(fromDate));
@@ -187,18 +117,35 @@ const CategorySalesReport = ({
       }
       params.append('groupBy', 'subcategory');
       
+      // FIX: Remove the extra 'http://' and add proper authentication
       const url = `${baseUrl}/api/orders/reports/category-sales?${params}`;
-      const { data } = await axios.get(url);
+      const { data } = await axios.get(url, {
+        headers: { 
+          Authorization: `Bearer ${token}` 
+        }
+      });
       
       setCategorySalesData(data);
       notify.success("Category sales report loaded successfully");
     } catch (error) {
       console.error("Error fetching category sales report:", error);
-      const errorMessage = error.response?.data?.details || 
-                          error.response?.data?.error || 
-                          "Failed to fetch category sales report. Please try again.";
-      setError(errorMessage);
-      notify.error(errorMessage);
+      
+      // FIX: Handle authentication errors
+      if (error.response?.status === 401) {
+        setError('Your session has expired. Please log in again.');
+        localStorage.removeItem('authToken');
+        notify.error('Session expired. Please log in again.');
+      } else if (error.response?.status === 403) {
+        setError('You do not have permission to access this report.');
+        notify.error('Access denied. Admin privileges required.');
+      } else {
+        const errorMessage = error.response?.data?.details || 
+                            error.response?.data?.error || 
+                            "Failed to fetch category sales report. Please try again.";
+        setError(errorMessage);
+        notify.error(errorMessage);
+      }
+      
       setCategorySalesData(null);
     } finally {
       setLoading(false);
@@ -218,13 +165,13 @@ const CategorySalesReport = ({
       isMounted = false;
       clearTimeout(timer);
     };
-  }, [selectedDate, fromDate, toDate, useRange]);
+  }, [selectedDate, fromDate, toDate, useRange, baseUrl]); // FIX: Add baseUrl to dependencies
 
-  // Get unique categories for filter
-  const availableCategories = categorySalesData ? 
+  // FIX: Get unique categories safely
+  const availableCategories = categorySalesData?.categories ? 
     [...new Set(categorySalesData.categories.map(item => item.category))] : [];
 
-  // Filter data based on selected category
+  // FIX: Filter data based on selected category safely
   const filteredCategoriesData = categorySalesData && selectedCategoryFilter !== 'all' 
     ? categorySalesData.categories.filter(item => item.category === selectedCategoryFilter)
     : categorySalesData?.categories || [];
@@ -232,31 +179,112 @@ const CategorySalesReport = ({
   const getPaymentMethodColor = (method) => {
     const colors = {
       'cash': '#4CAF50',
+      'نقدي': '#4CAF50',
       'visa': '#2196F3', 
+      'فيزا': '#2196F3',
       'credit': '#FF9800',
       'vodafone_cash': '#E91E63',
+      'فودافون كاش': '#E91E63',
       'الاهلي و مصر': '#9C27B0',
+      'بنك الاهلي و مصر': '#9C27B0',
       'postponed': '#FF5722',
+      'آجل': '#FF5722',
       'discount': '#795548',
-      'OTHER': '#607D8B'
+      'خصم': '#795548',
+      'OTHER': '#607D8B',
+      'بنوك اخرى': '#607D8B'
     };
     return colors[method] || '#757575';
   };
 
+  // FIX: Export function - handle missing data gracefully
+  const exportCategorySalesCSV = () => {
+    if (!categorySalesData || !categorySalesData.categories || categorySalesData.categories.length === 0) {
+      notify.warning("No category sales data to export");
+      return;
+    }
+
+    const escapeCSV = (field) => {
+      if (field === null || field === undefined) return '';
+      const str = String(field);
+      if (str.includes('"') || str.includes(',') || str.includes('\n') || str.includes('\r')) {
+        return `"${str.replace(/"/g, '""')}"`;
+      }
+      return str;
+    };
+
+    let csvContent = "\uFEFF";
+    csvContent += useRange
+      ? `Category Sales Report from ${formatDisplayDate(fromDate)} to ${formatDisplayDate(toDate)}\r\n\r\n`
+      : `Category Sales Report for ${formatDisplayDate(selectedDate)}\r\n\r\n`;
+
+    // Summary section - FIX: Handle missing summary data
+    csvContent += `SUMMARY\r\n`;
+    csvContent += `Total Categories,${categorySalesData.summary?.categories_count || categorySalesData.categories.length}\r\n`;
+    csvContent += `Total Tickets Sold,${categorySalesData.summary?.total_tickets_sold || 0}\r\n`;
+    csvContent += `Total Revenue (EGP),${categorySalesData.summary?.total_revenue?.toFixed(2) || '0.00'}\r\n`;
+    if (categorySalesData.summary?.total_payments_verification) {
+      csvContent += `Total Payments Verification (EGP),${categorySalesData.summary.total_payments_verification.toFixed(2)}\r\n`;
+    }
+    csvContent += `\r\n`;
+
+    // Category details header
+    csvContent += `CATEGORY BREAKDOWN\r\n`;
+    csvContent += `Category Name,Tickets Sold,Revenue (EGP),Subcategories Count\r\n`;
+
+    // Process each category - FIX: Handle missing fields
+    const categoryGroups = filteredCategoriesData.reduce((acc, item) => {
+      const category = item.category || 'Unknown';
+      if (!acc[category]) {
+        acc[category] = [];
+      }
+      acc[category].push(item);
+      return acc;
+    }, {});
+
+    Object.entries(categoryGroups).forEach(([category, items]) => {
+      const categoryTotal = items.reduce((sum, item) => sum + parseFloat(item.category_revenue || 0), 0);
+      const categoryTickets = items.reduce((sum, item) => sum + parseInt(item.tickets_sold || 0), 0);
+      
+      csvContent += `${escapeCSV(category)},${categoryTickets},${categoryTotal.toFixed(2)},${items.length}\r\n`;
+    });
+
+    // Subcategory breakdown
+    csvContent += `\r\nSUBCATEGORY BREAKDOWN\r\n`;
+    csvContent += `Category,Subcategory,Tickets Sold,Revenue (EGP),Unit Price (EGP)\r\n`;
+
+    Object.entries(categoryGroups).forEach(([category, items]) => {
+      items.forEach(item => {
+        csvContent += `${escapeCSV(category)},${escapeCSV(item.subcategory || 'N/A')},${item.tickets_sold || 0},${parseFloat(item.category_revenue || 0).toFixed(2)},${parseFloat(item.unit_price || 0).toFixed(2)}\r\n`;
+      });
+    });
+
+    const filename = useRange
+      ? `Category_Sales_${formatApiDate(fromDate)}_to_${formatApiDate(toDate)}.csv`
+      : `Category_Sales_${formatApiDate(selectedDate)}.csv`;
+
+    const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" });
+    saveAs(blob, filename);
+    notify.success("Category Sales CSV exported successfully!");
+  };
+
+  // FIX: CategorySalesCard component - handle missing data
   const CategorySalesCard = ({ category, data }) => {
+    if (!data || data.length === 0) return null;
+
     // Calculate category total EXCLUDING discounts from revenue
-    const categoryTotal = data.reduce((sum, item) => sum + parseFloat(item.category_revenue), 0);
-    const categoryTickets = data.reduce((sum, item) => sum + parseInt(item.tickets_sold), 0);
+    const categoryTotal = data.reduce((sum, item) => sum + parseFloat(item.category_revenue || 0), 0);
+    const categoryTickets = data.reduce((sum, item) => sum + parseInt(item.tickets_sold || 0), 0);
     const isExpanded = expandedCategories[category];
 
-    // Aggregate payment methods for the ENTIRE category
+    // Aggregate payment methods for the ENTIRE category - FIX: Handle missing payment_summary
     const categoryPayments = {};
-    let totalNonDiscountPayments = 0; // For percentage calculation base
+    let totalNonDiscountPayments = 0;
     
     data.forEach(item => {
-      if (item.payment_summary) {
+      if (item.payment_summary && typeof item.payment_summary === 'object') {
         Object.entries(item.payment_summary).forEach(([method, amount]) => {
-          if (method && method !== 'null') {
+          if (method && method !== 'null' && method !== 'undefined') {
             const mappedMethod = mapPaymentMethod(method);
             const paymentAmount = parseFloat(amount || 0);
             categoryPayments[mappedMethod] = (categoryPayments[mappedMethod] || 0) + paymentAmount;
@@ -309,45 +337,46 @@ const CategorySalesReport = ({
                   {category}
                 </Typography>
                 <Typography variant="body2" color="textSecondary">
-                  {categoryTickets} tickets • {data.length} subcategories • Avg: EGP {(categoryTotal/categoryTickets).toFixed(0)}/ticket
+                  {categoryTickets} tickets • {data.length} subcategories 
+                  {categoryTickets > 0 && ` • Avg: EGP ${(categoryTotal/categoryTickets).toFixed(0)}/ticket`}
                 </Typography>
                 
-                {/* Payment Methods Summary - Fixed percentage calculation */}
-                <Box mt={1}>
-                  <Typography variant="caption" display="block" color="textSecondary" fontWeight="600">
-                    Category Payment Methods:
-                  </Typography>
-                  <Box display="flex" gap={0.5} mt={0.5} flexWrap="wrap">
-                    {Object.entries(categoryPayments)
-                      .sort(([,a], [,b]) => b - a)
-                      .map(([method, amount]) => {
-                        // FIXED: Calculate percentage properly
-                        let percentage;
-                        if (method === 'خصم' || method === 'discount') {
-                          // For discounts, calculate as percentage of total revenue (what was actually charged)
-                          percentage = categoryTotal > 0 ? ((amount / categoryTotal) * 100).toFixed(1) : '0.0';
-                        } else {
-                          // For payments, calculate as percentage of total non-discount payments
-                          percentage = totalNonDiscountPayments > 0 ? ((amount / totalNonDiscountPayments) * 100).toFixed(1) : '0.0';
-                        }
-                        
-                        return (
-                          <Chip 
-                            key={method}
-                            label={`${method}: EGP ${parseFloat(amount).toFixed(0)} (${percentage}%)`}
-                            size="small"
-                            sx={{ 
-                              bgcolor: getPaymentMethodColor(method),
-                              color: 'white',
-                              fontSize: '0.65rem',
-                              height: '22px',
-                              fontWeight: 600
-                            }}
-                          />
-                        );
-                      })}
+                {/* Payment Methods Summary - FIX: Handle empty payments */}
+                {Object.keys(categoryPayments).length > 0 && (
+                  <Box mt={1}>
+                    <Typography variant="caption" display="block" color="textSecondary" fontWeight="600">
+                      Category Payment Methods:
+                    </Typography>
+                    <Box display="flex" gap={0.5} mt={0.5} flexWrap="wrap">
+                      {Object.entries(categoryPayments)
+                        .sort(([,a], [,b]) => b - a)
+                        .map(([method, amount]) => {
+                          // Calculate percentage properly
+                          let percentage;
+                          if (method === 'خصم' || method === 'discount') {
+                            percentage = categoryTotal > 0 ? ((amount / categoryTotal) * 100).toFixed(1) : '0.0';
+                          } else {
+                            percentage = totalNonDiscountPayments > 0 ? ((amount / totalNonDiscountPayments) * 100).toFixed(1) : '0.0';
+                          }
+                          
+                          return (
+                            <Chip 
+                              key={method}
+                              label={`${method}: EGP ${parseFloat(amount).toFixed(0)} (${percentage}%)`}
+                              size="small"
+                              sx={{ 
+                                bgcolor: getPaymentMethodColor(method),
+                                color: 'white',
+                                fontSize: '0.65rem',
+                                height: '22px',
+                                fontWeight: 600
+                              }}
+                            />
+                          );
+                        })}
+                    </Box>
                   </Box>
-                </Box>
+                )}
               </Box>
             </Box>
             
@@ -379,51 +408,51 @@ const CategorySalesReport = ({
           
           <Collapse in={isExpanded} timeout="auto" unmountOnExit>
             <Box mt={2}>
-              {/* Category-level payment breakdown - Fixed percentage calculation */}
-              <Paper sx={{ 
-                p: 2, 
-                mb: 2, 
-                bgcolor: 'rgba(0, 174, 239, 0.05)', 
-                borderRadius: 2,
-                border: '1px solid #00AEEF30'
-              }}>
-                <Typography variant="subtitle2" fontWeight="600" color="#00AEEF" mb={1}>
-                  💳 {category} Category Payment Breakdown
-                </Typography>
-                <Grid container spacing={1}>
-                  {Object.entries(categoryPayments)
-                    .sort(([,a], [,b]) => b - a)
-                    .map(([method, amount]) => {
-                      // FIXED: Calculate percentage properly for each payment method
-                      let percentage;
-                      if (method === 'خصم' || method === 'discount') {
-                        // For discounts, show as percentage of revenue
-                        percentage = categoryTotal > 0 ? ((amount / categoryTotal) * 100).toFixed(1) : '0.0';
-                      } else {
-                        // For payments, show as percentage of total payments (excluding discounts)
-                        percentage = totalNonDiscountPayments > 0 ? ((amount / totalNonDiscountPayments) * 100).toFixed(1) : '0.0';
-                      }
-                      
-                      return (
-                        <Grid item xs={6} sm={4} md={3} key={method}>
-                          <Box textAlign="center" p={1}>
-                            <Typography variant="body2" fontWeight="600" color={getPaymentMethodColor(method)}>
-                              {method}
-                            </Typography>
-                            <Typography variant="h6" color="text.primary">
-                              EGP {amount.toFixed(0)}
-                            </Typography>
-                            <Typography variant="caption" color="textSecondary">
-                              {percentage}%
-                            </Typography>
-                          </Box>
-                        </Grid>
-                      );
-                    })}
-                </Grid>
-              </Paper>
+              {/* Category-level payment breakdown - FIX: Only show if payments exist */}
+              {Object.keys(categoryPayments).length > 0 && (
+                <Paper sx={{ 
+                  p: 2, 
+                  mb: 2, 
+                  bgcolor: 'rgba(0, 174, 239, 0.05)', 
+                  borderRadius: 2,
+                  border: '1px solid #00AEEF30'
+                }}>
+                  <Typography variant="subtitle2" fontWeight="600" color="#00AEEF" mb={1}>
+                    💳 {category} Category Payment Breakdown
+                  </Typography>
+                  <Grid container spacing={1}>
+                    {Object.entries(categoryPayments)
+                      .sort(([,a], [,b]) => b - a)
+                      .map(([method, amount]) => {
+                        // Calculate percentage properly for each payment method
+                        let percentage;
+                        if (method === 'خصم' || method === 'discount') {
+                          percentage = categoryTotal > 0 ? ((amount / categoryTotal) * 100).toFixed(1) : '0.0';
+                        } else {
+                          percentage = totalNonDiscountPayments > 0 ? ((amount / totalNonDiscountPayments) * 100).toFixed(1) : '0.0';
+                        }
+                        
+                        return (
+                          <Grid item xs={6} sm={4} md={3} key={method}>
+                            <Box textAlign="center" p={1}>
+                              <Typography variant="body2" fontWeight="600" color={getPaymentMethodColor(method)}>
+                                {method}
+                              </Typography>
+                              <Typography variant="h6" color="text.primary">
+                                EGP {amount.toFixed(0)}
+                              </Typography>
+                              <Typography variant="caption" color="textSecondary">
+                                {percentage}%
+                              </Typography>
+                            </Box>
+                          </Grid>
+                        );
+                      })}
+                  </Grid>
+                </Paper>
+              )}
 
-              {/* Subcategory details - NO individual payment methods shown */}
+              {/* Subcategory details */}
               <Typography variant="subtitle2" fontWeight="600" color="#00AEEF" mb={1}>
                 📂 Subcategories Details
               </Typography>
@@ -443,10 +472,10 @@ const CategorySalesReport = ({
                     }}>
                       <Box display="flex" justifyContent="space-between" alignItems="center" mb={1}>
                         <Typography variant="subtitle2" fontWeight="600" color="#00AEEF">
-                          {item.subcategory}
+                          {item.subcategory || 'N/A'}
                         </Typography>
                         <Chip 
-                          label={`${item.tickets_sold} tickets`}
+                          label={`${item.tickets_sold || 0} tickets`}
                           size="small"
                           sx={{ 
                             bgcolor: '#00AEEF',
@@ -458,22 +487,31 @@ const CategorySalesReport = ({
                       </Box>
                       
                       <Typography variant="h6" fontWeight="bold" color="text.primary">
-                        EGP {parseFloat(item.category_revenue).toFixed(2)}
+                        EGP {parseFloat(item.category_revenue || 0).toFixed(2)}
                       </Typography>
                       <Typography variant="caption" color="textSecondary" display="block">
-                        Unit Price: EGP {parseFloat(item.unit_price).toFixed(2)} • {((parseFloat(item.category_revenue)/categoryTotal)*100).toFixed(1)}% of category
+                        Unit Price: EGP {parseFloat(item.unit_price || 0).toFixed(2)} 
+                        {categoryTotal > 0 && ` • ${((parseFloat(item.category_revenue || 0)/categoryTotal)*100).toFixed(1)}% of category`}
                       </Typography>
                       
+                      {/* FIX: Handle missing date fields */}
                       <Box mt={1}>
-                        <Typography variant="caption" display="block" color="textSecondary">
-                          First Sale: {new Date(item.first_sale).toLocaleDateString()}
-                        </Typography>
-                        <Typography variant="caption" display="block" color="textSecondary">
-                          Last Sale: {new Date(item.last_sale).toLocaleDateString()}
-                        </Typography>
-                        <Typography variant="caption" display="block" color="textSecondary">
-                          Orders: {item.orders_count} • Avg: {(parseFloat(item.tickets_sold) / parseInt(item.orders_count)).toFixed(1)} tickets/order
-                        </Typography>
+                        {item.first_sale && (
+                          <Typography variant="caption" display="block" color="textSecondary">
+                            First Sale: {new Date(item.first_sale).toLocaleDateString()}
+                          </Typography>
+                        )}
+                        {item.last_sale && (
+                          <Typography variant="caption" display="block" color="textSecondary">
+                            Last Sale: {new Date(item.last_sale).toLocaleDateString()}
+                          </Typography>
+                        )}
+                        {item.orders_count && (
+                          <Typography variant="caption" display="block" color="textSecondary">
+                            Orders: {item.orders_count} 
+                            {item.orders_count > 0 && ` • Avg: ${(parseFloat(item.tickets_sold || 0) / parseInt(item.orders_count)).toFixed(1)} tickets/order`}
+                          </Typography>
+                        )}
                       </Box>
                     </Paper>
                   </Grid>
@@ -494,7 +532,7 @@ const CategorySalesReport = ({
     );
   }
 
-  if (!categorySalesData || categorySalesData.categories.length === 0) {
+  if (!categorySalesData || !categorySalesData.categories || categorySalesData.categories.length === 0) {
     return (
       <Box display="flex" justifyContent="center" alignItems="center" height="100%" flexDirection="column">
         <Typography variant="h6" color="textSecondary" mb={1}>📊</Typography>
@@ -553,13 +591,14 @@ const CategorySalesReport = ({
         </Button>
       </Box>
 
-      {/* Display filtered categories */}
+      {/* Display filtered categories - FIX: Handle empty data */}
       {Object.entries(
         filteredCategoriesData.reduce((acc, item) => {
-          if (!acc[item.category]) {
-            acc[item.category] = [];
+          const category = item.category || 'Unknown';
+          if (!acc[category]) {
+            acc[category] = [];
           }
-          acc[item.category].push(item);
+          acc[category].push(item);
           return acc;
         }, {})
       ).map(([category, items]) => (

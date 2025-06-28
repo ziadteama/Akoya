@@ -965,35 +965,38 @@ const AccountantReports = () => {
         'other': 'بنوك اخرى',
         'visa': 'فيزا',
         'debit': 'بطاقة خصم',
-        'discount': 'خصم'
+        'discount': 'خصم',
+        'vodafone cash': 'فودافون كاش',
+        'vodafone_cash': 'فودافون كاش' 
       };
-      
+    
       const normalizedMethod = (method || '').toString().toLowerCase().trim();
-      
+    
       if (methodMappings[normalizedMethod]) {
         return methodMappings[normalizedMethod];
       }
-      
+    
       if (normalizedMethod.includes('الاهلي') || normalizedMethod.includes('مصر')) {
         return 'بنك الاهلي و مصر';
       }
-      
+    
       if (normalizedMethod.includes('postponed') || normalizedMethod.includes('آجل')) {
         return 'آجل';
-      } 
+      }
+    
       if (normalizedMethod.includes('vodafone_cash') || normalizedMethod.includes('vodafone cash')) {
         return 'فودافون كاش';
       }
-      
+    
       if (normalizedMethod.includes('cash') || normalizedMethod.includes('نقد')) {
         return 'نقدي';
       }
-      
+    
       if (normalizedMethod.includes('bank') || normalizedMethod.includes('بنك') || 
           normalizedMethod.includes('card') || normalizedMethod.includes('بطاقة')) {
         return 'بنوك اخرى';
       }
-      
+    
       return method || 'غير محدد';
     };
 
@@ -1002,7 +1005,7 @@ const AccountantReports = () => {
       ? `Orders Report from ${formatDisplayDate(fromDate)} to ${formatDisplayDate(toDate)}`
       : `Orders Report for ${formatDisplayDate(selectedDate)}`;
 
-    // Calculate cashier breakdown
+    // Enhanced cashier breakdown with payment methods
     const cashierBreakdown = {};
     reportData.forEach(order => {
       const cashierName = order.user_name || 'Unknown Cashier';
@@ -1013,7 +1016,8 @@ const AccountantReports = () => {
           totalRevenue: 0,
           totalTickets: 0,
           totalMeals: 0,
-          totalDiscounts: 0
+          totalDiscounts: 0,
+          paymentMethods: {} // New: Track payment methods per cashier
         };
       }
       
@@ -1032,16 +1036,37 @@ const AccountantReports = () => {
         });
       }
       
+      // Track payment methods per cashier
       if (order.payments && order.payments.length > 0) {
         order.payments.forEach(payment => {
+          const mappedMethod = mapPaymentMethod(payment.method);
+          const amount = parseFloat(payment.amount || 0);
+          
+          if (!cashierBreakdown[cashierName].paymentMethods[mappedMethod]) {
+            cashierBreakdown[cashierName].paymentMethods[mappedMethod] = 0;
+          }
+          
+          cashierBreakdown[cashierName].paymentMethods[mappedMethod] += amount;
+          
           if (payment.method === 'discount') {
-            cashierBreakdown[cashierName].totalDiscounts += parseFloat(payment.amount || 0);
+            cashierBreakdown[cashierName].totalDiscounts += amount;
           }
         });
       }
     });
 
-    // Calculate breakdowns
+    // Calculate overall payment method totals
+    const overallPaymentMethods = {};
+    Object.values(cashierBreakdown).forEach(cashier => {
+      Object.entries(cashier.paymentMethods).forEach(([method, amount]) => {
+        if (!overallPaymentMethods[method]) {
+          overallPaymentMethods[method] = 0;
+        }
+        overallPaymentMethods[method] += amount;
+      });
+    });
+
+    // Calculate other breakdowns (tickets, meals)
     const ticketsByCategory = {};
     reportData.forEach(order => {
       if (order.tickets && order.tickets.length > 0) {
@@ -1076,26 +1101,9 @@ const AccountantReports = () => {
       }
     });
 
-    const paymentsByMethod = {};
-    reportData.forEach(order => {
-      if (order.payments && order.payments.length > 0) {
-        order.payments.forEach(payment => {
-          const originalMethod = payment.method || 'Unknown';
-          const mappedMethod = mapPaymentMethod(originalMethod);
-          
-          if (!paymentsByMethod[mappedMethod]) {
-            paymentsByMethod[mappedMethod] = 0;
-          }
-          
-          paymentsByMethod[mappedMethod] += parseFloat(payment.amount || 0);
-        });
-      }
-    });
+    const totalPaymentsSum = Object.values(overallPaymentMethods).reduce((sum, amount) => sum + amount, 0);
 
-    // NEW: Calculate total payments sum
-    const totalPaymentsSum = Object.values(paymentsByMethod).reduce((sum, amount) => sum + amount, 0);
-
-    // Create HTML content for printing
+    // Create HTML content for printing with enhanced cashier breakdown
     const printContent = `
       <!DOCTYPE html>
       <html>
@@ -1165,13 +1173,41 @@ const AccountantReports = () => {
               margin-bottom: 15px;
               text-align: center;
             }
-            .cashier-row {
+            .cashier-detail {
               background-color: white;
-              border-radius: 4px;
-              margin-bottom: 8px;
+              border-radius: 8px;
+              margin-bottom: 15px;
+              padding: 12px;
+              border: 1px solid #ddd;
             }
-            .cashier-row:hover {
-              background-color: #f0f8ff;
+            .cashier-header {
+              font-size: 16px;
+              font-weight: bold;
+              color: #00AEEF;
+              margin-bottom: 10px;
+              padding-bottom: 5px;
+              border-bottom: 2px solid #00AEEF;
+            }
+            .payment-methods-grid {
+              display: grid;
+              grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+              gap: 10px;
+              margin: 10px 0;
+            }
+            .payment-method-item {
+              background-color: #f8f9fa;
+              padding: 8px;
+              border-radius: 4px;
+              border-left: 3px solid #00AEEF;
+            }
+            .cashier-summary {
+              background-color: #e8f4fd;
+              padding: 10px;
+              border-radius: 6px;
+              margin-top: 10px;
+              display: grid;
+              grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+              gap: 10px;
             }
             .total-payments-row {
               background-color: #e8f4fd;
@@ -1213,9 +1249,52 @@ const AccountantReports = () => {
             </div>
           </div>
 
-          <!-- Cashier Performance Section -->
+          <!-- Enhanced Cashier Performance Section -->
           <div class="cashier-section">
-            <div class="cashier-title">👤 CASHIER PERFORMANCE BREAKDOWN</div>
+            <div class="cashier-title">👤 DETAILED CASHIER PERFORMANCE BREAKDOWN</div>
+            
+            ${Object.entries(cashierBreakdown)
+              .sort(([,a], [,b]) => b.totalRevenue - a.totalRevenue)
+              .map(([cashierName, data]) => {
+                const revenuePercentage = ((data.totalRevenue / summary.totalRevenue) * 100).toFixed(1);
+                return `
+                  <div class="cashier-detail">
+                    <div class="cashier-header">👤 ${cashierName}</div>
+                    
+                    <div class="cashier-summary">
+                      <div><strong>📋 Orders:</strong> ${data.ordersCount}</div>
+                      <div><strong>🎟️ Tickets:</strong> ${data.totalTickets}</div>
+                      <div><strong>🍽️ Meals:</strong> ${data.totalMeals}</div>
+                      <div><strong>💰 Revenue:</strong> EGP ${data.totalRevenue.toFixed(2)}</div>
+                      <div><strong>💸 Discounts:</strong> EGP ${data.totalDiscounts.toFixed(2)}</div>
+                      <div><strong>📊 % of Total:</strong> ${revenuePercentage}%</div>
+                    </div>
+
+                    <div style="margin-top: 15px;">
+                      <strong style="color: #00AEEF;">💳 Payment Methods Breakdown:</strong>
+                      <div class="payment-methods-grid">
+                        ${Object.entries(data.paymentMethods)
+                          .sort(([,a], [,b]) => b - a)
+                          .map(([method, amount]) => `
+                            <div class="payment-method-item">
+                              <div class="arabic" style="font-weight: bold;">${method}</div>
+                              <div style="font-size: 14px; color: #00AEEF; font-weight: bold;">EGP ${amount.toFixed(2)}</div>
+                              <div style="font-size: 11px; color: #666;">
+                                ${((amount / data.totalRevenue) * 100).toFixed(1)}% of cashier total
+                              </div>
+                            </div>
+                          `).join('')}
+                      </div>
+                    </div>
+                  </div>
+                `;
+              }).join('')}
+
+          <!-- Overall Totals Summary Table -->
+          <div style="margin-top: 20px;">
+            <div style="font-size: 16px; font-weight: bold; color: #00AEEF; margin-bottom: 10px; text-align: center;">
+              📊 OVERALL CASHIER TOTALS SUMMARY
+            </div>
             <table>
               <thead>
                 <tr style="background-color: #00AEEF; color: white;">
@@ -1234,7 +1313,7 @@ const AccountantReports = () => {
                   .map(([cashierName, data]) => {
                     const revenuePercentage = ((data.totalRevenue / summary.totalRevenue) * 100).toFixed(1);
                     return `
-                      <tr class="cashier-row">
+                      <tr>
                         <td style="font-weight: bold; color: #00AEEF;">${cashierName}</td>
                         <td style="text-align: center;">${data.ordersCount}</td>
                         <td style="text-align: center;">${data.totalTickets}</td>
@@ -1259,92 +1338,97 @@ const AccountantReports = () => {
               </tfoot>
             </table>
           </div>
+        </div>
 
-          <div class="section">
-            <div class="section-title">TICKET BREAKDOWN</div>
-            <table>
-              <thead>
+        <div class="section">
+          <div class="section-title">TICKET BREAKDOWN</div>
+          <table>
+            <thead>
+              <tr>
+                <th>Category</th>
+                <th>Quantity</th>
+                <th>Revenue (EGP)</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${Object.entries(ticketsByCategory).map(([category, data]) => `
                 <tr>
-                  <th>Category</th>
-                  <th>Quantity</th>
-                  <th>Revenue (EGP)</th>
+                  <td>${category}</td>
+                  <td>${data.quantity}</td>
+                  <td>${data.revenue.toFixed(2)}</td>
                 </tr>
-              </thead>
-              <tbody>
-                ${Object.entries(ticketsByCategory).map(([category, data]) => `
-                  <tr>
-                    <td>${category}</td>
-                    <td>${data.quantity}</td>
-                    <td>${data.revenue.toFixed(2)}</td>
-                  </tr>
-                `).join('')}
-              </tbody>
-            </table>
-          </div>
+              `).join('')}
+            </tbody>
+          </table>
+        </div>
 
-          ${Object.keys(mealsByType).length > 0 ? `
-          <div class="section">
-            <div class="section-title">MEAL BREAKDOWN</div>
-            <table>
-              <thead>
+        ${Object.keys(mealsByType).length > 0 ? `
+        <div class="section">
+          <div class="section-title">MEAL BREAKDOWN</div>
+          <table>
+            <thead>
+              <tr>
+                <th>Meal Type</th>
+                <th>Quantity</th>
+                <th>Revenue (EGP)</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${Object.entries(mealsByType).map(([mealName, data]) => `
                 <tr>
-                  <th>Meal Type</th>
-                  <th>Quantity</th>
-                  <th>Revenue (EGP)</th>
+                  <td>${mealName}</td>
+                  <td>${data.quantity}</td>
+                  <td>${data.revenue.toFixed(2)}</td>
                 </tr>
-              </thead>
-              <tbody>
-                ${Object.entries(mealsByType).map(([mealName, data]) => `
-                  <tr>
-                    <td>${mealName}</td>
-                    <td>${data.quantity}</td>
-                    <td>${data.revenue.toFixed(2)}</td>
-                  </tr>
-                `).join('')}
-              </tbody>
-            </table>
-          </div>
-          ` : ''}
+              `).join('')}
+            </tbody>
+          </table>
+        </div>
+        ` : ''}
 
-          <div class="section">
-            <div class="section-title">PAYMENT METHOD BREAKDOWN</div>
-            <table>
-              <thead>
+        <div class="section">
+          <div class="section-title">OVERALL PAYMENT METHOD BREAKDOWN</div>
+          <table>
+            <thead>
+              <tr>
+                <th class="arabic">Payment Method</th>
+                <th>Total Amount (EGP)</th>
+                <th>% of Total Payments</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${Object.entries(overallPaymentMethods)
+                .sort(([,a], [,b]) => b - a)
+                .map(([method, amount]) => `
                 <tr>
-                  <th class="arabic">Payment Method</th>
-                  <th>Total Amount (EGP)</th>
+                  <td class="arabic">${method}</td>
+                  <td style="font-weight: bold;">EGP ${amount.toFixed(2)}</td>
+                  <td style="text-align: center;">${((amount / totalPaymentsSum) * 100).toFixed(1)}%</td>
                 </tr>
-              </thead>
-              <tbody>
-                ${Object.entries(paymentsByMethod).map(([method, amount]) => `
-                  <tr>
-                    <td class="arabic">${method}</td>
-                    <td>${amount.toFixed(2)}</td>
-                  </tr>
-                `).join('')}
-              </tbody>
-              <!-- NEW: Total Payments Row -->
-              <tfoot>
-                <tr class="total-payments-row">
-                  <td class="arabic" style="font-weight: bold; color: #00AEEF;">💳 TOTAL PAYMENTS</td>
-                  <td style="font-weight: bold; font-size: 16px; color: #00AEEF;">EGP ${totalPaymentsSum.toFixed(2)}</td>
-                </tr>
-              </tfoot>
-            </table>
-          </div>
-        </body>
-      </html>
-    `;
+              `).join('')}
+            </tbody>
+            <tfoot>
+              <tr class="total-payments-row">
+                <td class="arabic" style="font-weight: bold; color: #00AEEF;">💳 TOTAL PAYMENTS</td>
+                <td style="font-weight: bold; font-size: 16px; color: #00AEEF;">EGP ${totalPaymentsSum.toFixed(2)}</td>
+                <td style="font-weight: bold; text-align: center; color: #00AEEF;">100%</td>
+              </tr>
+            </tfoot>
+          </table>
+        </div>
+      </body>
+    </html>
+  `;
 
-    // Open print window
-    const printWindow = window.open('', '_blank');
-    printWindow.document.write(printContent);
-    printWindow.document.close();
-    printWindow.focus();
-    printWindow.print();
-    printWindow.close();
+  // Open print window
+  const printWindow = window.open('', '_blank');
+  printWindow.document.write(printContent);
+  printWindow.document.close();
+  printWindow.focus();
+  printWindow.print();
+  printWindow.close();
 
-    notify.success("Orders report with cashier breakdown prepared for printing!");
+  notify.success("Enhanced orders report with detailed cashier breakdown prepared for printing!");
   };
 
   // New print function for tickets
