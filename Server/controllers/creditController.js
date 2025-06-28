@@ -562,21 +562,26 @@ export const processMealOnlyCredit = async (orderId, meals, client, defaultCredi
 export const getCreditReport = async (req, res) => {
   try {
     const { startDate, endDate, date } = req.query;
-    
+
     let dateFilter = '';
     const params = [];
-    
-    // Handle date filtering
+
+    // Date filter logic
     if (startDate && endDate) {
-      dateFilter = 'AND DATE(ct.created_at) BETWEEN $1 AND $2';
+      dateFilter = `WHERE DATE(created_at) BETWEEN $1 AND $2`;
       params.push(startDate, endDate);
     } else if (date) {
-      dateFilter = 'AND DATE(ct.created_at) = $1';
+      dateFilter = `WHERE DATE(created_at) = $1`;
       params.push(date);
     }
-    
-    // Get all credit accounts with their details
+
+    // Step 1: Filtered transactions using CTE
     const accountsQuery = `
+      WITH filtered_transactions AS (
+        SELECT *
+        FROM credit_transactions
+        ${dateFilter}
+      )
       SELECT 
         ca.id,
         ca.name,
@@ -585,37 +590,29 @@ export const getCreditReport = async (req, res) => {
         ca.created_at,
         ca.updated_at,
         COALESCE(
-          JSON_AGG(
-            DISTINCT cca.category_name
-          ) FILTER (WHERE cca.category_name IS NOT NULL),
+          JSON_AGG(DISTINCT cca.category_name)
+          FILTER (WHERE cca.category_name IS NOT NULL),
           '[]'::json
-        ) as linked_categories,
-        COALESCE(
-          SUM(
-            CASE 
-              WHEN ct.transaction_type = 'ticket_sale' AND ct.amount < 0 ${dateFilter.replace('AND', 'AND')}
-              THEN ABS(ct.amount)
-              ELSE 0 
-            END
-          ), 0
-        ) as credit_used_in_period,
-        COUNT(
-          CASE 
-            WHEN ct.id IS NOT NULL ${dateFilter.replace('AND', 'AND')}
-            THEN 1 
-            ELSE NULL 
-          END
-        ) as transactions_in_period
+        ) AS linked_categories,
+        COALESCE((
+          SELECT SUM(ABS(ft.amount))
+          FROM filtered_transactions ft
+          WHERE ft.credit_account_id = ca.id AND ft.transaction_type = 'ticket_sale' AND ft.amount < 0
+        ), 0) AS credit_used_in_period,
+        COALESCE((
+          SELECT COUNT(*)
+          FROM filtered_transactions ft
+          WHERE ft.credit_account_id = ca.id
+        ), 0) AS transactions_in_period
       FROM credit_accounts ca
       LEFT JOIN category_credit_accounts cca ON ca.id = cca.credit_account_id
-      LEFT JOIN credit_transactions ct ON ca.id = ct.credit_account_id
       GROUP BY ca.id, ca.name, ca.balance, ca.description, ca.created_at, ca.updated_at
-      ORDER BY ca.balance DESC, ca.name
+      ORDER BY ca.balance DESC, ca.name;
     `;
-    
+
     const { rows: accounts } = await pool.query(accountsQuery, params);
-    
-    // Calculate summary statistics
+
+    // Step 2: Summary calculations
     const summary = {
       total_accounts: accounts.length,
       total_current_balance: accounts.reduce((sum, acc) => sum + parseFloat(acc.balance), 0),
@@ -625,25 +622,29 @@ export const getCreditReport = async (req, res) => {
       accounts_with_surplus: accounts.filter(acc => acc.balance > 0).length,
       accounts_neutral: accounts.filter(acc => acc.balance === 0).length
     };
-    
-    // Get period-specific transaction details if needed
+
+    // Step 3: Per-account transaction summaries (also using same filtered CTE)
     const transactionsSummaryQuery = `
+      WITH filtered_transactions AS (
+        SELECT *
+        FROM credit_transactions
+        ${dateFilter}
+      )
       SELECT 
-        ca.id as account_id,
-        ca.name as account_name,
-        COUNT(ct.id) as transaction_count,
-        COALESCE(SUM(CASE WHEN ct.amount > 0 THEN ct.amount ELSE 0 END), 0) as total_credits,
-        COALESCE(SUM(CASE WHEN ct.amount < 0 THEN ABS(ct.amount) ELSE 0 END), 0) as total_debits,
-        COALESCE(SUM(ct.amount), 0) as net_change
+        ca.id AS account_id,
+        ca.name AS account_name,
+        COUNT(ft.id) AS transaction_count,
+        COALESCE(SUM(CASE WHEN ft.amount > 0 THEN ft.amount ELSE 0 END), 0) AS total_credits,
+        COALESCE(SUM(CASE WHEN ft.amount < 0 THEN ABS(ft.amount) ELSE 0 END), 0) AS total_debits,
+        COALESCE(SUM(ft.amount), 0) AS net_change
       FROM credit_accounts ca
-      LEFT JOIN credit_transactions ct ON ca.id = ct.credit_account_id
-      WHERE 1=1 ${dateFilter}
+      LEFT JOIN filtered_transactions ft ON ca.id = ft.credit_account_id
       GROUP BY ca.id, ca.name
-      ORDER BY ca.name
+      ORDER BY ca.name;
     `;
-    
+
     const { rows: transactionsSummary } = await pool.query(transactionsSummaryQuery, params);
-    
+
     res.json({
       summary,
       accounts: accounts.map(account => ({
@@ -667,9 +668,12 @@ export const getCreditReport = async (req, res) => {
         is_range: !!(startDate && endDate)
       }
     });
-    
+
   } catch (error) {
     console.error('Error generating credit report:', error);
-    res.status(500).json({ error: 'Failed to generate credit report', details: error.message });
+    res.status(500).json({
+      error: 'Failed to generate credit report',
+      details: error.message
+    });
   }
 };

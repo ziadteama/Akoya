@@ -42,15 +42,15 @@ import axios from 'axios';
 import { notify } from '../utils/toast';
 import { saveAs } from 'file-saver';
 
-const CreditReport = ({ 
-  selectedDate, 
-  fromDate, 
-  toDate, 
-  useRange, 
-  formatApiDate, 
-  loading, 
-  setLoading, 
-  error, 
+const CreditReport = ({
+  selectedDate,
+  fromDate,
+  toDate,
+  useRange,
+  formatApiDate,
+  loading,
+  setLoading,
+  error,
   setError,
   creditReportData,
   setCreditReportData
@@ -63,7 +63,77 @@ const CreditReport = ({
   const [transactionsPagination, setTransactionsPagination] = useState({});
   const [loadingTransactions, setLoadingTransactions] = useState(false);
 
+  // FIX: Use the same pattern as UsersManagement
   const baseUrl = window.runtimeConfig?.apiBaseUrl;
+
+  const fetchCreditReportData = async () => {
+    if (!baseUrl) {
+      setError('API base URL not configured');
+      return;
+    }
+
+    setLoading(true);
+    setError(null);
+
+    try {
+      const token = localStorage.getItem('authToken');
+      if (!token) {
+        setError('Authentication required');
+        return;
+      }
+
+      let url;
+      if (useRange && fromDate && toDate) {
+        url = `${baseUrl}/api/credit/report?from=${formatApiDate(fromDate)}&to=${formatApiDate(toDate)}`;
+      } else if (selectedDate) {
+        url = `${baseUrl}/api/credit/report?date=${formatApiDate(selectedDate)}`;
+      } else {
+        setError('Please select a date or date range');
+        return;
+      }
+
+      const response = await axios.get(url, {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+
+      setCreditReportData(response.data);
+    } catch (error) {
+      console.error('Error fetching credit report:', error);
+      setError(error.response?.data?.error || 'Failed to fetch credit report');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const fetchTransactions = async (accountId, page = 1) => {
+    if (!baseUrl) return;
+
+    setLoadingTransactions(true);
+
+    try {
+      const token = localStorage.getItem('authToken');
+      if (!token) return;
+
+      let url = `${baseUrl}/api/credit/transactions/${accountId}?page=${page}&limit=10`;
+
+      if (useRange && fromDate && toDate) {
+        url += `&from=${formatApiDate(fromDate)}&to=${formatApiDate(toDate)}`;
+      } else if (selectedDate) {
+        url += `&date=${formatApiDate(selectedDate)}`;
+      }
+
+      const response = await axios.get(url, {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+
+      setTransactions(response.data.transactions || []);
+      setTransactionsPagination(response.data.pagination || {});
+    } catch (error) {
+      console.error('Error fetching transactions:', error);
+    } finally {
+      setLoadingTransactions(false);
+    }
+  };
 
   // Fetch credit report data
   const fetchCreditReport = useCallback(async () => {
@@ -71,17 +141,17 @@ const CreditReport = ({
       setError("API configuration not available");
       return;
     }
-    
+
     setLoading(true);
     setError(null);
-    
+
     try {
       const params = useRange
         ? { startDate: formatApiDate(fromDate), endDate: formatApiDate(toDate) }
         : { date: formatApiDate(selectedDate) };
-          
+
       const response = await axios.get(`${baseUrl}/api/credits/credit-report`, { params });
-      
+
       setCreditReportData(response.data);
       notify.success("Credit report loaded successfully");
     } catch (error) {
@@ -98,22 +168,22 @@ const CreditReport = ({
   // Fetch credit transactions for specific account
   const fetchCreditTransactions = async (accountId, page = 1) => {
     if (!baseUrl) return;
-    
+
     setLoadingTransactions(true);
-    
+
     try {
       const params = {
         page,
         limit: 20,
-        ...(useRange 
+        ...(useRange
           ? { startDate: formatApiDate(fromDate), endDate: formatApiDate(toDate) }
           : { date: formatApiDate(selectedDate) }
         )
       };
-      
+
       // FIX: Change from /api/credit/ to /api/credits/
       const response = await axios.get(`${baseUrl}/api/credits/${accountId}/transactions`, { params });
-      
+
       setTransactions(response.data.transactions);
       setTransactionsPagination(response.data.pagination);
     } catch (error) {
@@ -127,13 +197,13 @@ const CreditReport = ({
   // Simplified useEffect to handle fetching logic
   useEffect(() => {
     let isMounted = true;
-    
+
     const timer = setTimeout(() => {
       if (isMounted && !creditReportData) {
         fetchCreditReport();
       }
     }, 1000);
-    
+
     return () => {
       isMounted = false;
       clearTimeout(timer);
@@ -148,9 +218,9 @@ const CreditReport = ({
   };
 
   const openTransactionsDialog = (accountId, accountName) => {
-    setTransactionsDialog({ 
-      open: true, 
-      accountId, 
+    setTransactionsDialog({
+      open: true,
+      accountId,
       accountName  // This was missing
     });
     setTransactionsPage(1);
@@ -232,30 +302,30 @@ const CreditReport = ({
 
       const status = getAccountStatus(account.balance); // Use account.balance not account.current_balance
       const statusText = status.type === 'debt' ? 'IN DEBT' : status.type === 'surplus' ? 'SURPLUS' : 'NEUTRAL';
-      
+
       csvContent += `${escapeCSV(account.name)},${account.balance.toFixed(2)},${(account.credit_used_in_period || 0).toFixed(2)},${account.transactions_in_period || 0},${escapeCSV(statusText)},${escapeCSV(linkedCategoriesText)}\r\n`;
     });
 
     // Transaction details if available
-   // Replace the CSV transaction export section (around line 250) with this corrected version:
+    // Replace the CSV transaction export section (around line 250) with this corrected version:
 
-// Transaction details if available
-const hasTransactions = creditReportData.accounts.some(acc => acc.recent_transactions && acc.recent_transactions.length > 0);
-if (hasTransactions) {
-  csvContent += `\r\nRECENT TRANSACTIONS BREAKDOWN\r\n`;
-  csvContent += `Account Name,Transaction Date,Amount (EGP),Type,Description\r\n`;
+    // Transaction details if available
+    const hasTransactions = creditReportData.accounts.some(acc => acc.recent_transactions && acc.recent_transactions.length > 0);
+    if (hasTransactions) {
+      csvContent += `\r\nRECENT TRANSACTIONS BREAKDOWN\r\n`;
+      csvContent += `Account Name,Transaction Date,Amount (EGP),Type,Description\r\n`;
 
-  creditReportData.accounts.forEach(account => {
-    if (account.recent_transactions && account.recent_transactions.length > 0) {
-      account.recent_transactions.forEach(transaction => {
-        const transactionDate = new Date(transaction.created_at).toLocaleDateString();
-        const transactionType = transaction.transaction_type ? transaction.transaction_type.replace('_', ' ') : 'N/A';
-        const amount = parseFloat(transaction.amount || 0); // FIX: Parse amount as float
-        csvContent += `${escapeCSV(account.name)},${transactionDate},${amount.toFixed(2)},${escapeCSV(transactionType)},${escapeCSV(transaction.description || 'Credit transaction')}\r\n`;
+      creditReportData.accounts.forEach(account => {
+        if (account.recent_transactions && account.recent_transactions.length > 0) {
+          account.recent_transactions.forEach(transaction => {
+            const transactionDate = new Date(transaction.created_at).toLocaleDateString();
+            const transactionType = transaction.transaction_type ? transaction.transaction_type.replace('_', ' ') : 'N/A';
+            const amount = parseFloat(transaction.amount || 0); // FIX: Parse amount as float
+            csvContent += `${escapeCSV(account.name)},${transactionDate},${amount.toFixed(2)},${escapeCSV(transactionType)},${escapeCSV(transaction.description || 'Credit transaction')}\r\n`;
+          });
+        }
       });
     }
-  });
-}
 
     const filename = useRange
       ? `Credit_Report_${formatApiDate(fromDate)}_to_${formatApiDate(toDate)}.csv`
@@ -314,15 +384,14 @@ if (hasTransactions) {
               ))}
             </Select>
           </FormControl>
-          
+
           {selectedAccountFilter !== 'all' && (
-            <Chip 
-              label={`Showing: ${
-                selectedAccountFilter === 'surplus' ? 'Surplus Accounts' :
+            <Chip
+              label={`Showing: ${selectedAccountFilter === 'surplus' ? 'Surplus Accounts' :
                 selectedAccountFilter === 'debt' ? 'Debt Accounts' :
-                selectedAccountFilter === 'neutral' ? 'Neutral Balance' :
-                availableAccounts.find(a => a.id === selectedAccountFilter)?.name || 'Unknown'
-              }`}
+                  selectedAccountFilter === 'neutral' ? 'Neutral Balance' :
+                    availableAccounts.find(a => a.id === selectedAccountFilter)?.name || 'Unknown'
+                }`}
               onDelete={() => setSelectedAccountFilter('all')}
               color="primary"
               sx={{ bgcolor: '#00AEEF', color: 'white' }}
@@ -352,13 +421,13 @@ if (hasTransactions) {
         const isExpanded = expandedAccounts[account.id];
 
         return (
-          <Card key={account.id} sx={{ 
-            mb: 2, 
-            background: account.balance < 0 
+          <Card key={account.id} sx={{
+            mb: 2,
+            background: account.balance < 0
               ? 'linear-gradient(135deg, #ffebee 0%, #ffffff 50%)'
               : account.balance > 0
-              ? 'linear-gradient(135deg, #e8f5e8 0%, #ffffff 50%)'
-              : 'linear-gradient(135deg, #f5f5f5 0%, #ffffff 50%)',
+                ? 'linear-gradient(135deg, #e8f5e8 0%, #ffffff 50%)'
+                : 'linear-gradient(135deg, #f5f5f5 0%, #ffffff 50%)',
             border: `2px solid ${status.color}`,
             borderRadius: 3,
             overflow: 'hidden',
@@ -369,25 +438,25 @@ if (hasTransactions) {
             }
           }}>
             <CardContent sx={{ p: 2 }}>
-              <Box 
-                display="flex" 
-                justifyContent="space-between" 
-                alignItems="center" 
+              <Box
+                display="flex"
+                justifyContent="space-between"
+                alignItems="center"
                 sx={{ cursor: 'pointer' }}
                 onClick={() => toggleAccountExpansion(account.id)}
               >
                 <Box display="flex" alignItems="center" gap={1.5}>
-                  <Avatar sx={{ 
-                    bgcolor: status.color, 
-                    width: 50, 
+                  <Avatar sx={{
+                    bgcolor: status.color,
+                    width: 50,
                     height: 50,
                     fontSize: '1.5rem'
                   }}>
                     {status.icon}
                   </Avatar>
                   <Box>
-                    <Typography variant="h6" sx={{ 
-                      color: status.color, 
+                    <Typography variant="h6" sx={{
+                      color: status.color,
                       fontWeight: 700,
                       fontSize: '1.2rem'
                     }}>
@@ -396,15 +465,15 @@ if (hasTransactions) {
                     <Typography variant="body2" color="textSecondary">
                       {account.linked_categories.length} categories • {account.transactions_in_period} transactions in period
                     </Typography>
-                    
+
                     {/* Linked Categories */}
                     <Box mt={1} display="flex" gap={0.5} flexWrap="wrap">
                       {account.linked_categories.map((category, index) => (
-                        <Chip 
+                        <Chip
                           key={index}
                           label={category}
                           size="small"
-                          sx={{ 
+                          sx={{
                             bgcolor: '#00AEEF20',
                             color: '#00AEEF',
                             fontSize: '0.7rem',
@@ -413,10 +482,10 @@ if (hasTransactions) {
                         />
                       ))}
                       {account.linked_categories.length === 0 && (
-                        <Chip 
+                        <Chip
                           label="No categories linked"
                           size="small"
-                          sx={{ 
+                          sx={{
                             bgcolor: '#ffcc0220',
                             color: '#f57c00',
                             fontSize: '0.7rem',
@@ -427,20 +496,20 @@ if (hasTransactions) {
                     </Box>
                   </Box>
                 </Box>
-                
+
                 <Box display="flex" alignItems="center" gap={2}>
                   <Box textAlign="right">
-                    <Typography variant="h4" sx={{ 
-                      color: status.color, 
+                    <Typography variant="h4" sx={{
+                      color: status.color,
                       fontWeight: 800,
                       lineHeight: 1
                     }}>
                       EGP {Math.abs(account.balance).toFixed(2)}
                     </Typography>
-                    <Chip 
+                    <Chip
                       label={status.type === 'debt' ? 'IN DEBT' : status.type === 'surplus' ? 'SURPLUS' : 'NEUTRAL'}
                       size="small"
-                      sx={{ 
+                      sx={{
                         bgcolor: status.color,
                         color: 'white',
                         fontWeight: 600,
@@ -458,21 +527,21 @@ if (hasTransactions) {
                   </IconButton>
                 </Box>
               </Box>
-              
+
               <Collapse in={isExpanded} timeout="auto" unmountOnExit>
                 <Box mt={2}>
                   {/* Account Details Section */}
-                  <Paper sx={{ 
-                    p: 2, 
-                    mb: 2, 
-                    bgcolor: 'rgba(0, 174, 239, 0.05)', 
+                  <Paper sx={{
+                    p: 2,
+                    mb: 2,
+                    bgcolor: 'rgba(0, 174, 239, 0.05)',
                     borderRadius: 2,
                     border: '1px solid #00AEEF30'
                   }}>
                     <Typography variant="subtitle2" fontWeight="600" color="#00AEEF" mb={2}>
                       💳 Account Details
                     </Typography>
-                    
+
                     <Grid container spacing={2}>
                       <Grid item xs={12} sm={6} md={3}>
                         <Box textAlign="center" p={1}>
@@ -487,7 +556,7 @@ if (hasTransactions) {
                           </Typography>
                         </Box>
                       </Grid>
-                      
+
                       <Grid item xs={12} sm={6} md={3}>
                         <Box textAlign="center" p={1}>
                           <Typography variant="body2" fontWeight="600" color="#FF9800">
@@ -501,7 +570,7 @@ if (hasTransactions) {
                           </Typography>
                         </Box>
                       </Grid>
-                      
+
                       <Grid item xs={12} sm={6} md={3}>
                         <Box textAlign="center" p={1}>
                           <Typography variant="body2" fontWeight="600" color="#9C27B0">
@@ -515,7 +584,7 @@ if (hasTransactions) {
                           </Typography>
                         </Box>
                       </Grid>
-                      
+
                       <Grid item xs={12} sm={6} md={3}>
                         <Box textAlign="center" p={1}>
                           <Typography variant="body2" fontWeight="600" color="#4CAF50">
@@ -564,8 +633,8 @@ if (hasTransactions) {
       )}
 
       {/* Transaction History Dialog */}
-      <Dialog 
-        open={transactionsDialog.open} 
+      <Dialog
+        open={transactionsDialog.open}
         onClose={closeTransactionsDialog}
         maxWidth="lg"
         fullWidth
@@ -615,8 +684,8 @@ if (hasTransactions) {
                           </Typography>
                         </TableCell>
                         <TableCell align="right">
-                          <Typography 
-                            variant="body2" 
+                          <Typography
+                            variant="body2"
                             color={parseFloat(transaction.amount || 0) >= 0 ? 'success.main' : 'error.main'}
                             fontWeight="bold"
                           >
@@ -625,7 +694,7 @@ if (hasTransactions) {
                         </TableCell>
                         <TableCell>
                           {transaction.order_number ? (
-                            <Chip 
+                            <Chip
                               label={`#${transaction.order_number}`}
                               size="small"
                               variant="outlined"
