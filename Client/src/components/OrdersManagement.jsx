@@ -35,21 +35,25 @@ import {
   Divider,
   Card,
   CardContent,
+  CardActions,
   Tabs,
-  Tab
+  Tab,
+  useTheme,
+  useMediaQuery,
+  Stack,
+  Collapse
 } from '@mui/material';
 import { LocalizationProvider, DatePicker } from '@mui/x-date-pickers';
 import { AdapterDayjs } from '@mui/x-date-pickers/AdapterDayjs';
 import dayjs from 'dayjs';
 import axios from 'axios';
-// Remove config import
-// import config from '../../../config';
 import { notify, confirmToast } from '../utils/toast';
 
 // Icons
 import SearchIcon from '@mui/icons-material/Search';
 import FilterListIcon from '@mui/icons-material/FilterList';
 import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
+import ExpandLessIcon from '@mui/icons-material/ExpandLess';
 import EditIcon from '@mui/icons-material/Edit';
 import DeleteIcon from '@mui/icons-material/Delete';
 import AddIcon from '@mui/icons-material/Add';
@@ -64,7 +68,139 @@ import RefreshIcon from '@mui/icons-material/Refresh';
 import PrintIcon from '@mui/icons-material/Print';
 import PersonIcon from '@mui/icons-material/Person';
 
+// Mobile Order Card Component
+const MobileOrderCard = ({ order, onEdit, onDelete, formatCurrency, formatPaymentMethod, getPaymentMethodColor }) => {
+  const [expanded, setExpanded] = useState(false);
+  const orderDate = new Date(order.created_at);
+  
+  const ticketCount = order.tickets ? 
+    order.tickets.reduce((sum, ticket) => sum + (ticket.quantity || 0), 0) : 0;
+  
+  const mealCount = order.meals ? 
+    order.meals.reduce((sum, meal) => sum + (meal.quantity || 0), 0) : 0;
+
+  return (
+    <Card sx={{ 
+      mb: 2, 
+      borderRadius: 2,
+      boxShadow: '0 2px 8px rgba(0,0,0,0.1)',
+      transition: 'all 0.3s ease',
+      '&:hover': {
+        transform: 'translateY(-2px)',
+        boxShadow: '0 4px 12px rgba(0,0,0,0.15)'
+      }
+    }}>
+      <CardContent sx={{ pb: 1 }}>
+        {/* Header Row */}
+        <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2 }}>
+          <Typography variant="h6" color="primary" fontWeight="bold">
+            Order #{order.order_id}
+          </Typography>
+          <Typography variant="h6" fontWeight="bold" color="success.main">
+            {formatCurrency(order.total_amount)}
+          </Typography>
+        </Box>
+
+        {/* Date and Cashier Row */}
+        <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2 }}>
+          <Box>
+            <Typography variant="body2" color="text.secondary">
+              {orderDate.toLocaleDateString()}
+            </Typography>
+            <Typography variant="caption" color="text.secondary">
+              {orderDate.toLocaleTimeString()}
+            </Typography>
+          </Box>
+          <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
+            <PersonIcon fontSize="small" color="action" />
+            <Typography variant="body2">{order.user_name || 'Unknown'}</Typography>
+          </Box>
+        </Box>
+
+        {/* Items Summary */}
+        <Box sx={{ display: 'flex', gap: 1, mb: 2, flexWrap: 'wrap' }}>
+          {ticketCount > 0 && (
+            <Chip 
+              icon={<LocalActivityIcon fontSize="small" />}
+              label={`${ticketCount} ticket${ticketCount !== 1 ? 's' : ''}`}
+              size="small"
+              color="primary"
+              variant="outlined"
+            />
+          )}
+          {mealCount > 0 && (
+            <Chip 
+              icon={<RestaurantIcon fontSize="small" />}
+              label={`${mealCount} meal${mealCount !== 1 ? 's' : ''}`}
+              size="small"
+              color="secondary"
+              variant="outlined"
+            />
+          )}
+        </Box>
+
+        {/* Payment Methods - Collapsible */}
+        <Box sx={{ mb: 1 }}>
+          <Button
+            size="small"
+            onClick={() => setExpanded(!expanded)}
+            endIcon={expanded ? <ExpandLessIcon /> : <ExpandMoreIcon />}
+            sx={{ mb: 1, textTransform: 'none' }}
+            color="inherit"
+          >
+            Payment Details
+          </Button>
+          <Collapse in={expanded}>
+            <Box sx={{ display: 'flex', gap: 0.5, flexWrap: 'wrap' }}>
+              {order.payments && order.payments.map((payment, index) => (
+                <Chip 
+                  key={index}
+                  label={`${formatPaymentMethod(payment.method)}: ${formatCurrency(payment.amount)}`}
+                  size="small"
+                  color={getPaymentMethodColor(payment.method)}
+                  variant="outlined"
+                  sx={{ fontSize: '0.7rem', height: 24 }}
+                />
+              ))}
+            </Box>
+          </Collapse>
+        </Box>
+      </CardContent>
+
+      <CardActions sx={{ pt: 0, justifyContent: 'flex-end', px: 2, pb: 2 }}>
+        <IconButton
+          color="primary"
+          onClick={() => onEdit(order)}
+          title="Edit Order"
+          sx={{ 
+            backgroundColor: '#f0f9ff',
+            '&:hover': { backgroundColor: '#e0f2fe' }
+          }}
+        >
+          <EditIcon />
+        </IconButton>
+        <IconButton
+          color="error"
+          onClick={() => onDelete(order)}
+          title="Delete Order"
+          sx={{ 
+            backgroundColor: '#fef2f2',
+            '&:hover': { backgroundColor: '#fee2e2' }
+          }}
+        >
+          <DeleteIcon />
+        </IconButton>
+      </CardActions>
+    </Card>
+  );
+};
+
 const OrdersManagement = () => {
+  // Get theme and responsive breakpoints
+  const theme = useTheme();
+  const isMobile = useMediaQuery(theme.breakpoints.down('md'));
+  const isSmallMobile = useMediaQuery(theme.breakpoints.down('sm'));
+
   // State variables
   const [orders, setOrders] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -74,9 +210,9 @@ const OrdersManagement = () => {
   const [fromDate, setFromDate] = useState(dayjs().subtract(7, 'day'));
   const [toDate, setToDate] = useState(dayjs());
   
-  // Pagination
+  // Pagination - responsive defaults
   const [page, setPage] = useState(0);
-  const [rowsPerPage, setRowsPerPage] = useState(10);
+  const [rowsPerPage, setRowsPerPage] = useState(isMobile ? 5 : 10);
   
   // Edit Dialog
   const [editDialogOpen, setEditDialogOpen] = useState(false);
@@ -93,14 +229,22 @@ const OrdersManagement = () => {
   // Ticket and meal modification
   const [availableTicketTypes, setAvailableTicketTypes] = useState([]);
   const [availableMeals, setAvailableMeals] = useState([]);
-  
-  // ADD THIS MISSING STATE VARIABLE
   const [paymentMethods, setPaymentMethods] = useState([]);
   
   // Tab state for edit dialog
   const [editTab, setEditTab] = useState(0);
 
+  // Delete confirmation
+  const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
+  const [orderToDelete, setOrderToDelete] = useState(null);
+
   const baseUrl = window.runtimeConfig?.apiBaseUrl;
+
+  // Update rows per page when screen size changes
+  useEffect(() => {
+    setRowsPerPage(isMobile ? 5 : 10);
+    setPage(0);
+  }, [isMobile]);
 
   // Fetch orders on component mount and when date range changes
   useEffect(() => {
@@ -176,11 +320,23 @@ const OrdersManagement = () => {
       
       if (!token) return;
       
-      const response = await axios.get(`${baseUrl}/api/tickets/ticket-types`, {
-        params: { archived: false },
+      // Get user role and build query based on role
+      const userRole = localStorage.getItem('userRole') || 'cashier';
+      
+      let queryParams = '';
+      if (userRole === 'accountant') {
+        // Accountants can see all tickets (archived and unarchived)
+        queryParams = ''; // No archived filter - fetch all
+      } else {
+        // Cashiers only see unarchived tickets
+        queryParams = '?archived=false';
+      }
+      
+      const response = await axios.get(`${baseUrl}/api/tickets/ticket-types${queryParams}`, {
         headers: { Authorization: `Bearer ${token}` }
       });
       
+      console.log(`Ticket types fetched for role "${userRole}":`, response.data.length, 'types');
       setAvailableTicketTypes(response.data);
     } catch (error) {
       console.error('Error fetching ticket types:', error);
@@ -196,11 +352,23 @@ const OrdersManagement = () => {
       
       if (!token) return;
       
-      const response = await axios.get(`${baseUrl}/api/meals`, {
-        params: { archived: false },
+      // Get user role and build query based on role
+      const userRole = localStorage.getItem('userRole') || 'cashier';
+      
+      let queryParams = '';
+      if (userRole === 'accountant') {
+        // Accountants can see all meals (archived and unarchived)
+        queryParams = ''; // No archived filter - fetch all
+      } else {
+        // Cashiers only see unarchived meals
+        queryParams = '?archived=false';
+      }
+      
+      const response = await axios.get(`${baseUrl}/api/meals${queryParams}`, {
         headers: { Authorization: `Bearer ${token}` }
       });
       
+      console.log(`Meals fetched for role "${userRole}":`, response.data.length, 'meals');
       setAvailableMeals(response.data);
     } catch (error) {
       console.error('Error fetching meals:', error);
@@ -292,7 +460,6 @@ const OrdersManagement = () => {
   const handleFromDateChange = (newValue) => {
     if (newValue) {
       setFromDate(newValue);
-      // Ensure fromDate is not after toDate
       if (newValue.isAfter(toDate)) {
         setToDate(newValue);
       }
@@ -303,753 +470,11 @@ const OrdersManagement = () => {
   const handleToDateChange = (newValue) => {
     if (newValue) {
       setToDate(newValue);
-      // Ensure toDate is not before fromDate
       if (fromDate.isAfter(newValue)) {
         setFromDate(newValue);
       }
     }
   };
-
-  // Open edit dialog
-  const handleOpenEditDialog = (order) => {
-    // Create a deep copy of the order to avoid modifying the original
-    const orderCopy = JSON.parse(JSON.stringify(order));
-    
-    // Make sure payments are properly formatted
-    const formattedPayments = orderCopy.payments && orderCopy.payments.length > 0 
-      ? orderCopy.payments 
-      : [{ method: 'cash', amount: parseFloat(orderCopy.total_amount) || 0 }];
-    
-    // Ensure each payment has both method and amount properties
-    const validatedPayments = formattedPayments.map(payment => ({
-      method: payment.method || 'cash',
-      amount: parseFloat(payment.amount) || 0
-    }));
-    
-    console.log('Original order payments:', order.payments);
-    console.log('Formatted payments for editing:', validatedPayments);
-    
-    setSelectedOrder(order);
-    setEditableOrder({
-      ...orderCopy,
-      tickets: orderCopy.tickets || [],
-      meals: orderCopy.meals || [],
-      payments: validatedPayments,
-      addedTickets: [],
-      removedTickets: [],
-      addedMeals: [],
-      removedMeals: [],
-      originalPayments: validatedPayments // Keep a copy of original payments for comparison
-    });
-    setEditDialogOpen(true);
-    
-    // Set the initial tab to the Payments tab if we're specifically editing payments
-    // setEditTab(2); // Uncomment this line if you want to default to the payments tab
-  };
-  
-  // Close edit dialog
-  const handleCloseEditDialog = () => {
-    setEditDialogOpen(false);
-    setSelectedOrder(null);
-    setEditableOrder(null);
-    setEditTab(0);
-  };
-
-  // Handle adding a ticket to the order
-  const handleAddTicket = (ticketType) => {
-    if (!editableOrder) return;
-    
-    console.log('Adding ticket:', ticketType); // Debug log
-    
-    // Check if this ticket type is already in the order
-    const existingTicketIndex = editableOrder.tickets.findIndex(
-      t => t.ticket_type_id === ticketType.id || t.ticket_type_id === ticketType.ticket_type_id
-    );
-    
-    // Create a copy of the tickets array for updating
-    const updatedTickets = [...(editableOrder.tickets || [])];
-    
-    if (existingTicketIndex >= 0) {
-      // Increment quantity of existing ticket
-      updatedTickets[existingTicketIndex] = {
-        ...updatedTickets[existingTicketIndex],
-        quantity: (updatedTickets[existingTicketIndex].quantity || 1) + 1
-      };
-    } else {
-      // Add new ticket type
-      const newTicket = {
-        ticket_type_id: ticketType.id || ticketType.ticket_type_id,
-        category: ticketType.category,
-        subcategory: ticketType.subcategory,
-        sold_price: ticketType.price,
-        quantity: 1
-      };
-      
-      console.log('New ticket being added:', newTicket); // Debug log
-      updatedTickets.push(newTicket);
-    }
-    
-    // Add to addedTickets for tracking changes
-    const newAddedTicket = {
-      ticket_type_id: ticketType.id || ticketType.ticket_type_id,
-      quantity: 1
-    };
-    
-    // Calculate updated totals using the updatedTickets array
-    const ticketTotal = updatedTickets.reduce((sum, ticket) => {
-      const price = parseFloat(ticket.sold_price) || 0;
-      const quantity = ticket.quantity || 1;
-      return sum + (price * quantity);
-    }, 0);
-    
-    const mealTotal = (editableOrder.meals || []).reduce((sum, meal) => {
-      const price = parseFloat(meal.price_at_order) || 0;
-      const quantity = meal.quantity || 1;
-      return sum + (price * quantity);
-    }, 0);
-    
-    const grossTotal = parseFloat((ticketTotal + mealTotal).toFixed(2));
-    const discountAmount = (editableOrder.payments || [])
-      .filter(payment => payment.method === 'discount')
-      .reduce((sum, payment) => sum + (parseFloat(payment.amount) || 0), 0);
-    const totalAmount = parseFloat((grossTotal - discountAmount).toFixed(2));
-    
-    // Update payment if only one exists
-    let updatedPayments = [...editableOrder.payments];
-    if (updatedPayments.length === 1) {
-      const isDiscount = updatedPayments[0].method === 'discount';
-      updatedPayments[0] = {
-        ...updatedPayments[0],
-        amount: isDiscount ? grossTotal : totalAmount
-      };
-    }
-    
-    // Update state with all changes in one go
-    setEditableOrder(prevState => ({
-      ...prevState,
-      tickets: updatedTickets,
-      gross_total: grossTotal,
-      total_amount: totalAmount,
-      payments: updatedPayments,
-      addedTickets: [...(prevState.addedTickets || []), newAddedTicket]
-    }));
-  };
-  
-  // Handle removing a ticket from the order
-  const handleRemoveTicket = (ticketTypeId) => {
-    if (!editableOrder) return;
-    
-    // Find the ticket in the order
-    const ticketIndex = editableOrder.tickets.findIndex(t => t.ticket_type_id === ticketTypeId);
-    
-    if (ticketIndex >= 0) {
-      const updatedTickets = [...editableOrder.tickets];
-      
-      if (updatedTickets[ticketIndex].quantity > 1) {
-        // Decrement quantity
-        updatedTickets[ticketIndex] = {
-          ...updatedTickets[ticketIndex],
-          quantity: updatedTickets[ticketIndex].quantity - 1
-        };
-      } else {
-        // Remove the ticket type completely
-        updatedTickets.splice(ticketIndex, 1);
-      }
-      
-      // Calculate updated totals using the updatedTickets array
-      const ticketTotal = updatedTickets.reduce((sum, ticket) => {
-        const price = parseFloat(ticket.sold_price) || 0;
-        const quantity = parseInt(ticket.quantity) || 1;
-        return sum + (price * quantity);
-      }, 0);
-      
-      const mealTotal = (editableOrder.meals || []).reduce((sum, meal) => {
-        const price = parseFloat(meal.price_at_order) || 0;
-        const quantity = parseInt(meal.quantity) || 1;
-        return sum + (price * quantity);
-      }, 0);
-      
-      // Calculate gross total and discount
-      const grossTotal = parseFloat((ticketTotal + mealTotal).toFixed(2));
-      const discountAmount = (editableOrder.payments || [])
-        .filter(payment => payment.method === 'discount')
-        .reduce((sum, payment) => sum + (parseFloat(payment.amount) || 0), 0);
-      const totalAmount = parseFloat((grossTotal - discountAmount).toFixed(2));
-      
-      // Update payments
-      let updatedPayments = [...editableOrder.payments];
-      const nonDiscountPayments = updatedPayments.filter(p => p.method !== 'discount');
-      
-      if (nonDiscountPayments.length === 1) {
-        // If there's just one non-discount payment, adjust it to match the total
-        const nonDiscountIndex = updatedPayments.findIndex(p => p.method !== 'discount');
-        updatedPayments[nonDiscountIndex].amount = totalAmount;
-      } else if (nonDiscountPayments.length > 1) {
-        // If multiple non-discount payments, adjust them proportionally
-        // Same logic as in recalculateOrderTotal
-        const currentNonDiscountTotal = nonDiscountPayments.reduce(
-          (sum, p) => sum + (parseFloat(p.amount) || 0), 0
-        );
-        
-        if (currentNonDiscountTotal > 0) {
-          // Apply scaling factor
-          const scaleFactor = totalAmount / currentNonDiscountTotal;
-          let adjustedTotal = 0;
-          const nonDiscountIndices = updatedPayments
-            .map((p, i) => p.method !== 'discount' ? i : -1)
-            .filter(i => i !== -1);
-          
-          for (let i = 0; i < nonDiscountIndices.length - 1; i++) {
-            const index = nonDiscountIndices[i];
-            const scaledAmount = parseFloat((updatedPayments[index].amount * scaleFactor).toFixed(2));
-            updatedPayments[index].amount = scaledAmount;
-            adjustedTotal += scaledAmount;
-          }
-          
-          // Last payment covers remainder
-          const lastIndex = nonDiscountIndices[nonDiscountIndices.length - 1];
-          updatedPayments[lastIndex].amount = parseFloat((totalAmount - adjustedTotal).toFixed(2));
-        }
-      }
-      
-      // Update all state in one operation
-      setEditableOrder(prevState => ({
-        ...prevState,
-        tickets: updatedTickets,
-        gross_total: grossTotal,
-        total_amount: totalAmount,
-        payments: updatedPayments,
-        removedTickets: [...(prevState.removedTickets || []), { ticket_type_id: ticketTypeId, quantity: 1 }]
-      }));
-    }
-  };
-  
-  // Handle adding a meal to the order
-  const handleAddMeal = (meal) => {
-    if (!editableOrder) return;
-    
-    console.log('Adding meal:', meal); // Debug log
-    
-    // Check if this meal is already in the order
-    const existingMealIndex = editableOrder.meals.findIndex(
-      m => m.meal_id === meal.id || m.meal_id === meal.meal_id
-    );
-    
-    let updatedMeals = [...editableOrder.meals];
-    
-    if (existingMealIndex >= 0) {
-      // Increment quantity of existing meal
-      updatedMeals[existingMealIndex] = {
-        ...updatedMeals[existingMealIndex],
-        quantity: (updatedMeals[existingMealIndex].quantity || 1) + 1
-      };
-    } else {
-      // Add new meal
-      const newMeal = {
-        meal_id: meal.id || meal.meal_id,
-        name: meal.name,
-        quantity: 1,
-        price_at_order: meal.price
-      };
-      
-      console.log('New meal being added:', newMeal);
-      updatedMeals = [...updatedMeals, newMeal];
-    }
-    
-    // Create newAddedMeal for tracking changes
-    const newAddedMeal = {
-      meal_id: meal.id || meal.meal_id,
-      quantity: 1,
-      price: meal.price
-    };
-    
-    // Calculate totals immediately
-    const ticketTotal = (editableOrder.tickets || []).reduce((sum, ticket) => {
-      const price = parseFloat(ticket.sold_price) || 0;
-      const quantity = parseInt(ticket.quantity) || 1;
-      return sum + (price * quantity);
-    }, 0);
-    
-    const mealTotal = updatedMeals.reduce((sum, meal) => {
-      const price = parseFloat(meal.price_at_order) || 0;
-      const quantity = parseInt(meal.quantity) || 1;
-      return sum + (price * quantity);
-    }, 0);
-    
-    // Calculate gross total and discount
-    const grossTotal = parseFloat((ticketTotal + mealTotal).toFixed(2));
-    const discountAmount = (editableOrder.payments || [])
-      .filter(payment => payment.method === 'discount')
-      .reduce((sum, payment) => sum + (parseFloat(payment.amount) || 0), 0);
-    const totalAmount = parseFloat((grossTotal - discountAmount).toFixed(2));
-    
-    // Update payments to maintain balance
-    let updatedPayments = [...editableOrder.payments];
-    const nonDiscountPayments = updatedPayments.filter(p => p.method !== 'discount');
-    
-    if (nonDiscountPayments.length === 1) {
-      // If there's just one non-discount payment, adjust it to match the total
-      const nonDiscountIndex = updatedPayments.findIndex(p => p.method !== 'discount');
-      updatedPayments[nonDiscountIndex].amount = totalAmount;
-    } else if (nonDiscountPayments.length > 1) {
-      // If multiple non-discount payments, adjust them proportionally (same logic as in recalculateOrderTotal)
-      const currentNonDiscountTotal = nonDiscountPayments.reduce(
-        (sum, p) => sum + (parseFloat(p.amount) || 0), 0
-      );
-      
-      if (currentNonDiscountTotal > 0) {
-        // Apply scaling factor
-        const scaleFactor = totalAmount / currentNonDiscountTotal;
-        let adjustedTotal = 0;
-        const nonDiscountIndices = updatedPayments
-          .map((p, i) => p.method !== 'discount' ? i : -1)
-          .filter(i => i !== -1);
-        
-        for (let i = 0; i < nonDiscountIndices.length - 1; i++) {
-          const index = nonDiscountIndices[i];
-          const scaledAmount = parseFloat((updatedPayments[index].amount * scaleFactor).toFixed(2));
-          updatedPayments[index].amount = scaledAmount;
-          adjustedTotal += scaledAmount;
-        }
-        
-        // Last payment covers remainder
-        const lastIndex = nonDiscountIndices[nonDiscountIndices.length - 1];
-        updatedPayments[lastIndex].amount = parseFloat((totalAmount - adjustedTotal).toFixed(2));
-      }
-    }
-    
-    // Update everything in one state change
-    setEditableOrder(prevState => ({
-      ...prevState,
-      meals: updatedMeals,
-      gross_total: grossTotal,
-      total_amount: totalAmount,
-      payments: updatedPayments,
-      addedMeals: [...(prevState.addedMeals || []), newAddedMeal]
-    }));
-    
-    console.log(`Updated order: Gross=${grossTotal.toFixed(2)}, Net=${totalAmount.toFixed(2)}, Meals=${updatedMeals.length}`);
-  };
-  
-  // Handle removing a meal from the order
-  const handleRemoveMeal = (mealId) => {
-    if (!editableOrder) return;
-    
-    // Find the meal in the order
-    const mealIndex = editableOrder.meals.findIndex(m => m.meal_id === mealId);
-    
-    if (mealIndex >= 0) {
-      const updatedMeals = [...editableOrder.meals];
-      
-      if (updatedMeals[mealIndex].quantity > 1) {
-        // Decrement quantity
-        updatedMeals[mealIndex] = {
-          ...updatedMeals[mealIndex],
-          quantity: updatedMeals[mealIndex].quantity - 1
-        };
-      } else {
-        // Remove the meal completely
-        updatedMeals.splice(mealIndex, 1);
-      }
-      
-      setEditableOrder({
-        ...editableOrder,
-        meals: updatedMeals
-      });
-      
-      // Add to removedMeals for tracking changes
-      setEditableOrder(prevState => ({
-        ...prevState,
-        removedMeals: [...(prevState.removedMeals || []), { meal_id: mealId, quantity: 1 }]
-      }));
-      
-      // Recalculate total after a short delay to ensure state is updated
-      recalculateOrderTotal();
-    }
-  };
-
-  // Update the recalculateOrderTotal function to ensure it properly updates state synchronously
-  const recalculateOrderTotal = () => {
-    if (!editableOrder) return;
-    
-    // Calculate ticket and meal totals with proper handling of potentially undefined values
-    const ticketTotal = Array.isArray(editableOrder.tickets) 
-      ? editableOrder.tickets.reduce((sum, ticket) => {
-          const price = parseFloat(ticket.sold_price) || 0;
-          const quantity = parseInt(ticket.quantity) || 1;
-          return sum + (price * quantity);
-        }, 0)
-      : 0;
-    
-    const mealTotal = Array.isArray(editableOrder.meals)
-      ? editableOrder.meals.reduce((sum, meal) => {
-          const price = parseFloat(meal.price_at_order) || 0;
-          const quantity = parseInt(meal.quantity) || 1;
-          return sum + (price * quantity);
-        }, 0)
-      : 0;
-    
-    // Calculate gross total with proper rounding
-    const grossTotal = parseFloat((ticketTotal + mealTotal).toFixed(2));
-    
-    // Calculate discount amount
-    const discountAmount = Array.isArray(editableOrder.payments)
-      ? editableOrder.payments
-          .filter(payment => payment.method === 'discount')
-          .reduce((sum, payment) => sum + (parseFloat(payment.amount) || 0), 0)
-      : 0;
-    
-    // Calculate final total
-    const totalAmount = parseFloat((grossTotal - discountAmount).toFixed(2));
-    
-    // Update payments to maintain balance
-    let updatedPayments = [...editableOrder.payments];
-    
-    // Check how many non-discount payments we have
-    const nonDiscountPayments = updatedPayments.filter(p => p.method !== 'discount');
-    
-    if (nonDiscountPayments.length === 1) {
-      // If there's just one non-discount payment, adjust it to match the total
-      const nonDiscountIndex = updatedPayments.findIndex(p => p.method !== 'discount');
-      updatedPayments[nonDiscountIndex].amount = totalAmount;
-    } else if (nonDiscountPayments.length > 1) {
-      // If there are multiple non-discount payments, scale them proportionally
-      const currentNonDiscountTotal = nonDiscountPayments.reduce(
-        (sum, p) => sum + (parseFloat(p.amount) || 0), 0
-      );
-      
-      if (currentNonDiscountTotal > 0) {
-        // Calculate a scaling factor
-        const scaleFactor = totalAmount / currentNonDiscountTotal;
-        
-        // Apply scaling factor to all non-discount payments
-        let adjustedTotal = 0;
-        const nonDiscountIndices = updatedPayments
-          .map((p, i) => p.method !== 'discount' ? i : -1)
-          .filter(i => i !== -1);
-        
-        // Scale all payments except the last one
-        for (let i = 0; i < nonDiscountIndices.length - 1; i++) {
-          const index = nonDiscountIndices[i];
-          const scaledAmount = parseFloat((updatedPayments[index].amount * scaleFactor).toFixed(2));
-          updatedPayments[index].amount = scaledAmount;
-          adjustedTotal += scaledAmount;
-        }
-        
-        // Make the last payment cover the remainder
-        const lastIndex = nonDiscountIndices[nonDiscountIndices.length - 1];
-        updatedPayments[lastIndex].amount = parseFloat((totalAmount - adjustedTotal).toFixed(2));
-      } else {
-        // If all current non-discount payments are zero, distribute evenly
-        const perPayment = parseFloat((totalAmount / nonDiscountPayments.length).toFixed(2));
-        let remaining = totalAmount;
-        
-        for (let i = 0; i < nonDiscountPayments.length; i++) {
-          const paymentIndex = updatedPayments.indexOf(nonDiscountPayments[i]);
-          
-          if (i === nonDiscountPayments.length - 1) {
-            // Last payment gets the remainder
-            updatedPayments[paymentIndex].amount = remaining;
-          } else {
-            updatedPayments[paymentIndex].amount = perPayment;
-            remaining -= perPayment;
-          }
-        }
-      }
-    } else if (nonDiscountPayments.length === 0 && totalAmount > 0) {
-      // If there are no non-discount payments, add a cash payment
-      updatedPayments.push({
-        method: 'cash',
-        amount: totalAmount
-      });
-    }
-    
-    // Update state with the new calculated values
-    setEditableOrder(prevState => ({
-      ...prevState,
-      gross_total: grossTotal,
-      total_amount: totalAmount,
-      payments: updatedPayments
-    }));
-    
-    console.log(`Recalculated: Gross=${grossTotal.toFixed(2)}, Net=${totalAmount.toFixed(2)}, Discount=${discountAmount.toFixed(2)}`);
-  };
-  
-  // Update the validatePaymentTotal to show warning toast for invalid payments
-  const validatePaymentTotal = () => {
-    if (!editableOrder || !editableOrder.payments) return false;
-    
-    // Calculate non-discount payments total
-    const nonDiscountPayments = editableOrder.payments
-      .filter(payment => payment.method !== 'discount')
-      .reduce((sum, payment) => sum + (parseFloat(payment.amount) || 0), 0);
-    
-    // Calculate discount amount
-    const discountAmount = editableOrder.payments
-      .filter(payment => payment.method === 'discount')
-      .reduce((sum, payment) => sum + (parseFloat(payment.amount) || 0), 0);
-    
-    // Use editableOrder.gross_total which is now reliably calculated
-    const grossTotal = parseFloat(editableOrder.gross_total || 0);
-    
-    // Calculate net total (after discounts)
-    const netTotal = parseFloat((grossTotal - discountAmount).toFixed(2));
-    
-    // Compare with slightly higher tolerance (0.05) for floating point errors
-    const difference = Math.abs(netTotal - nonDiscountPayments);
-    const isValid = difference < 0.05; // Increased tolerance slightly
-    
-    console.log(`Payment validation: Gross=${grossTotal.toFixed(2)}, Discount=${discountAmount.toFixed(2)}, Net=${netTotal.toFixed(2)}, 
-                 Non-discount payments=${nonDiscountPayments.toFixed(2)}, Difference=${difference.toFixed(2)}, Valid=${isValid}`);
-    
-    return isValid;
-  };
-
-  // Add this function to remove payment methods
-  const handleRemovePayment = (index) => {
-    if (!editableOrder || editableOrder.payments.length <= 1) return;
-    
-    const updatedPayments = [...editableOrder.payments];
-    const removedPayment = updatedPayments[index];
-    
-    // Remove the payment
-    updatedPayments.splice(index, 1);
-    
-    setEditableOrder({
-      ...editableOrder,
-      payments: updatedPayments
-    });
-    
-    // If we removed a discount payment, recalculate the order total
-    if (removedPayment.method === 'discount') {
-      setTimeout(() => recalculateOrderTotal(), 50);
-    }
-  };
-
-  // Update handlePaymentMethodChange to not call autoDistributeRemainingAmount
-  const handlePaymentMethodChange = (index, method) => {
-    if (!editableOrder) return;
-    
-    const oldMethod = editableOrder.payments[index].method;
-    const wasDiscount = oldMethod === 'discount';
-    const isDiscount = method === 'discount';
-    const updatedPayments = [...editableOrder.payments];
-    
-    // Update the payment method
-    updatedPayments[index] = { 
-      ...updatedPayments[index], 
-      method 
-    };
-    
-    setEditableOrder({
-      ...editableOrder,
-      payments: updatedPayments
-    });
-    
-    // If changing to/from discount, recalculate order total
-    if (wasDiscount !== isDiscount) {
-      setTimeout(() => {
-        recalculateOrderTotal();
-      }, 50);
-    }
-  };
-
-  // Update handlePaymentAmountChange to allow manual discount amount changes
-  const handlePaymentAmountChange = (index, amount) => {
-    if (!editableOrder) return;
-    
-    const parsedAmount = parseFloat(amount) || 0;
-    const updatedPayments = [...editableOrder.payments];
-    const isDiscountPayment = updatedPayments[index].method === 'discount';
-    
-    // Update the payment amount
-    updatedPayments[index] = { ...updatedPayments[index], amount: parsedAmount };
-    
-    // Calculate current values
-    const ticketTotal = Array.isArray(editableOrder.tickets) 
-      ? editableOrder.tickets.reduce((sum, ticket) => {
-          const price = parseFloat(ticket.sold_price) || 0;
-          const quantity = parseInt(ticket.quantity) || 1;
-          return sum + (price * quantity);
-        }, 0)
-      : 0;
-    
-    const mealTotal = Array.isArray(editableOrder.meals)
-      ? editableOrder.meals.reduce((sum, meal) => {
-          const price = parseFloat(meal.price_at_order) || 0;
-          const quantity = parseInt(meal.quantity) || 1;
-          return sum + (price * quantity);
-        }, 0)
-      : 0;
-    
-    const grossTotal = parseFloat((ticketTotal + mealTotal).toFixed(2));
-    
-    // Calculate total discount (may have multiple discount payments)
-    const discountAmount = updatedPayments
-      .filter(payment => payment.method === 'discount')
-      .reduce((sum, payment) => sum + (parseFloat(payment.amount) || 0), 0);
-    
-    // Calculate net amount after discount
-    const totalAmount = parseFloat((grossTotal - discountAmount).toFixed(2));
-    
-    // Only update the edited payment without auto-adjusting others
-    // (This is the key change - we're not auto-adjusting other payments)
-    setEditableOrder(prevState => ({
-      ...prevState,
-      payments: updatedPayments,
-      gross_total: grossTotal,
-      total_amount: totalAmount
-    }));
-  };
-
-  // Handle adding a new payment method
-  const handleAddPayment = () => {
-    if (!editableOrder) return;
-    
-    const grossTotal = parseFloat(editableOrder.gross_total || 0);
-    const currentTotal = editableOrder.payments.reduce((sum, payment) => sum + (parseFloat(payment.amount) || 0), 0);
-    
-    // Calculate how much is left to allocate
-    const discountAmount = editableOrder.payments
-      .filter(payment => payment.method === 'discount')
-      .reduce((sum, payment) => sum + (parseFloat(payment.amount) || 0), 0);
-    
-    const netTotal = grossTotal - discountAmount;
-    const nonDiscountTotal = editableOrder.payments
-      .filter(payment => payment.method !== 'discount')
-      .reduce((sum, payment) => sum + (parseFloat(payment.amount) || 0), 0);
-    
-    // Default amount is what remains to be paid
-    const newPaymentAmount = Math.max(0, netTotal - nonDiscountTotal);
-    
-    const updatedPayments = [
-      ...editableOrder.payments,
-      { method: 'cash', amount: newPaymentAmount }
-    ];
-    
-    setEditableOrder({
-      ...editableOrder,
-      payments: updatedPayments
-    });
-  };
-
-  // Save order changes
-  const saveOrderChanges = async () => {
-    if (!baseUrl) {
-      notify.error('API configuration not available');
-      return;
-    }
-
-    try {
-      if (!editableOrder || !selectedOrder) return;
-      
-      // Force recalculation to ensure everything is in sync
-      recalculateOrderTotal();
-      
-      // Validate payment total matches order total
-      if (!validatePaymentTotal()) {
-        notify.error('Payment total must match order total - please adjust payment amounts');
-        return;
-      }
-      
-      setLoading(true);
-      const token = localStorage.getItem('authToken');
-      
-      if (!token) {
-        notify.error('Authentication required. Please log in again.');
-        setLoading(false);
-        return;
-      }
-      
-      // Format payload with careful number parsing
-      const payments = editableOrder.payments.map(payment => ({
-        method: payment.method,
-        amount: Number(parseFloat(payment.amount).toFixed(2))
-      }));
-      
-      // Sanitize arrays before sending
-      const addedTickets = Array.isArray(editableOrder.addedTickets) 
-        ? editableOrder.addedTickets.map(ticket => ({
-            ...ticket,
-            quantity: Number(ticket.quantity)
-          }))
-        : [];
-        
-      const removedTickets = Array.isArray(editableOrder.removedTickets)
-        ? editableOrder.removedTickets.map(ticket => ({
-            ...ticket,
-            quantity: Number(ticket.quantity)
-          }))
-        : [];
-        
-      const addedMeals = Array.isArray(editableOrder.addedMeals)
-        ? editableOrder.addedMeals.map(meal => ({
-            ...meal,
-            quantity: Number(meal.quantity),
-            price: Number(parseFloat(meal.price).toFixed(2))
-          }))
-        : [];
-        
-      const removedMeals = Array.isArray(editableOrder.removedMeals)
-        ? editableOrder.removedMeals.map(meal => ({
-            ...meal,
-            quantity: Number(meal.quantity)
-          }))
-        : [];
-    
-      // Build the update payload
-      const updatePayload = {
-        order_id: selectedOrder.order_id,
-        addedTickets,
-        removedTickets,
-        addedMeals,
-        removedMeals,
-        payments
-      };
-      
-      console.log('Sending update payload:', updatePayload);
-      
-      // Send the update request
-      const response = await axios.put(
-        `${baseUrl}/api/orders/update`,
-        updatePayload,
-        { headers: { Authorization: `Bearer ${token}` } }
-      );
-      
-      console.log('Update response:', response.data);
-      
-      // Close dialog and show success message
-      handleCloseEditDialog();
-      notify.success('Order updated successfully');
-      
-      // Refresh orders list
-      fetchOrders();
-    } catch (error) {
-      console.error('Error updating order:', error.response?.data || error);
-      notify.error(error.response?.data?.message || 'Failed to update order');
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  // Apply filters to orders
-  const applyFilters = () => {
-    // Implementation depends on your filtering requirements
-    // This is a placeholder for the filtering logic
-    console.log('Applying filters:', filterOptions);
-    setFilterMenuOpen(false);
-  };
-
-  // Filter orders based on search term and other filters
-  const filteredOrders = orders.filter(order => {
-    // Filter by search term
-    const searchMatch = 
-      order.order_id?.toString().includes(searchTerm) ||
-      order.user_name?.toLowerCase().includes(searchTerm.toLowerCase());
-    
-    // Add more filter conditions as needed
-    return searchMatch;
-  });
 
   // Format currency for display
   const formatCurrency = (amount) => {
@@ -1105,15 +530,6 @@ const OrdersManagement = () => {
     }
   };
 
-  // Handle tab change in edit dialog
-  const handleEditTabChange = (event, newValue) => {
-    setEditTab(newValue);
-  };
-
-  // Add this state for delete confirmation
-  const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
-  const [orderToDelete, setOrderToDelete] = useState(null);
-
   // Enhanced delete confirmation function
   const handleDeleteOrder = (order) => {
     setOrderToDelete(order);
@@ -1153,135 +569,1289 @@ const OrdersManagement = () => {
     }
   };
 
+  // Filter orders based on search term and other filters
+  const filteredOrders = orders.filter(order => {
+    const searchMatch = 
+      order.order_id?.toString().includes(searchTerm) ||
+      order.user_name?.toLowerCase().includes(searchTerm.toLowerCase());
+    
+    return searchMatch;
+  });
+
+  // REPLACE the current handleOpenEditDialog function with this OLD WORKING LOGIC
+  const handleOpenEditDialog = (order) => {
+    // Create a deep copy of the order to avoid modifying the original
+    const orderCopy = JSON.parse(JSON.stringify(order));
+    
+    // Make sure payments are properly formatted
+    const formattedPayments = orderCopy.payments && orderCopy.payments.length > 0 
+      ? orderCopy.payments 
+      : [{ method: 'cash', amount: parseFloat(orderCopy.total_amount) || 0 }];
+    
+    // Ensure each payment has both method and amount properties
+    const validatedPayments = formattedPayments.map(payment => ({
+      method: payment.method || 'cash',
+      amount: parseFloat(payment.amount) || 0
+    }));
+    
+    console.log('Original order payments:', order.payments);
+    console.log('Formatted payments for editing:', validatedPayments);
+    
+    setSelectedOrder(order);
+    setEditableOrder({
+      ...orderCopy,
+      tickets: orderCopy.tickets || [],
+      meals: orderCopy.meals || [],
+      payments: validatedPayments,
+      addedTickets: [],
+      removedTickets: [],
+      addedMeals: [],
+      removedMeals: [],
+      originalPayments: validatedPayments // Keep a copy of original payments for comparison
+    });
+    setEditDialogOpen(true);
+    
+    // Set the initial tab to the Payments tab if we're specifically editing payments
+    // setEditTab(2); // Uncomment this line if you want to default to the payments tab
+  };
+  
+  // ALSO REPLACE the handleCloseEditDialog to ensure proper cleanup
+  const handleCloseEditDialog = () => {
+    setEditDialogOpen(false);
+    setSelectedOrder(null);
+    setEditableOrder(null);
+    setEditTab(0);
+  };
+
+  // Handle tab change in edit dialog
+  const handleEditTabChange = (event, newValue) => {
+    setEditTab(newValue);
+  };
+
+  // Handle adding a ticket to the order (SINGLE WORKING VERSION)
+  const handleAddTicket = (ticketType) => {
+    if (!editableOrder) return;
+    
+    console.log('Adding ticket:', ticketType);
+    
+    // Check quantity limit (optional constraint)
+    const existingTicketIndex = editableOrder.tickets.findIndex(
+      t => t.ticket_type_id === ticketType.id || t.ticket_type_id === ticketType.ticket_type_id
+    );
+    
+    const updatedTickets = [...(editableOrder.tickets || [])];
+    
+    if (existingTicketIndex >= 0) {
+      const currentQuantity = updatedTickets[existingTicketIndex].quantity || 1;
+      if (currentQuantity >= 50) {
+        notify.error('Maximum 50 tickets of the same type allowed');
+        return;
+      }
+      
+      updatedTickets[existingTicketIndex] = {
+        ...updatedTickets[existingTicketIndex],
+        quantity: currentQuantity + 1
+      };
+    } else {
+      const newTicket = {
+        ticket_type_id: ticketType.id || ticketType.ticket_type_id,
+        category: ticketType.category,
+        subcategory: ticketType.subcategory,
+        sold_price: ticketType.price,
+        quantity: 1
+      };
+      
+      updatedTickets.push(newTicket);
+    }
+    
+    const newAddedTicket = {
+      ticket_type_id: ticketType.id || ticketType.ticket_type_id,
+      quantity: 1
+    };
+    
+    // Calculate updated totals
+    const ticketTotal = updatedTickets.reduce((sum, ticket) => {
+      const price = parseFloat(ticket.sold_price) || 0;
+      const quantity = ticket.quantity || 1;
+      return sum + (price * quantity);
+    }, 0);
+    
+    const mealTotal = (editableOrder.meals || []).reduce((sum, meal) => {
+      const price = parseFloat(meal.price_at_order) || 0;
+      const quantity = meal.quantity || 1;
+      return sum + (price * quantity);
+    }, 0);
+    
+    const grossTotal = parseFloat((ticketTotal + mealTotal).toFixed(2));
+    const discountAmount = (editableOrder.payments || [])
+      .filter(payment => payment.method === 'discount')
+      .reduce((sum, payment) => sum + (parseFloat(payment.amount) || 0), 0);
+    const totalAmount = parseFloat((grossTotal - discountAmount).toFixed(2));
+    
+    let updatedPayments = [...editableOrder.payments];
+    if (updatedPayments.length === 1) {
+      const isDiscount = updatedPayments[0].method === 'discount';
+      updatedPayments[0] = {
+        ...updatedPayments[0],
+        amount: isDiscount ? grossTotal : totalAmount
+      };
+    }
+    
+    setEditableOrder(prevState => ({
+      ...prevState,
+      tickets: updatedTickets,
+      gross_total: grossTotal,
+      total_amount: totalAmount,
+      payments: updatedPayments,
+      addedTickets: [...(prevState.addedTickets || []), newAddedTicket]
+    }));
+    
+    notify.success(`Added ticket: ${ticketType.category} - ${ticketType.subcategory}`);
+  };
+
+  // Handle removing a ticket from the order
+  const handleRemoveTicket = (ticketTypeId) => {
+    if (!editableOrder) return;
+    
+    const ticketIndex = editableOrder.tickets.findIndex(t => t.ticket_type_id === ticketTypeId);
+    
+    if (ticketIndex >= 0) {
+      const updatedTickets = [...editableOrder.tickets];
+      
+      if (updatedTickets[ticketIndex].quantity > 1) {
+        updatedTickets[ticketIndex] = {
+          ...updatedTickets[ticketIndex],
+          quantity: updatedTickets[ticketIndex].quantity - 1
+        };
+      } else {
+        updatedTickets.splice(ticketIndex, 1);
+      }
+      
+      const ticketTotal = updatedTickets.reduce((sum, ticket) => {
+        const price = parseFloat(ticket.sold_price) || 0;
+        const quantity = parseInt(ticket.quantity) || 1;
+        return sum + (price * quantity);
+      }, 0);
+      
+      const mealTotal = (editableOrder.meals || []).reduce((sum, meal) => {
+        const price = parseFloat(meal.price_at_order) || 0;
+        const quantity = parseInt(meal.quantity) || 1;
+        return sum + (price * quantity);
+      }, 0);
+      
+      const grossTotal = parseFloat((ticketTotal + mealTotal).toFixed(2));
+      const discountAmount = (editableOrder.payments || [])
+        .filter(payment => payment.method === 'discount')
+        .reduce((sum, payment) => sum + (parseFloat(payment.amount) || 0), 0);
+      const totalAmount = parseFloat((grossTotal - discountAmount).toFixed(2));
+      
+      let updatedPayments = [...editableOrder.payments];
+      const nonDiscountPayments = updatedPayments.filter(p => p.method !== 'discount');
+      
+      if (nonDiscountPayments.length === 1) {
+        const nonDiscountIndex = updatedPayments.findIndex(p => p.method !== 'discount');
+        updatedPayments[nonDiscountIndex].amount = totalAmount;
+      }
+      
+      setEditableOrder(prevState => ({
+        ...prevState,
+        tickets: updatedTickets,
+        gross_total: grossTotal,
+        total_amount: totalAmount,
+        payments: updatedPayments,
+        removedTickets: [...(prevState.removedTickets || []), { ticket_type_id: ticketTypeId, quantity: 1 }]
+      }));
+    }
+  };
+
+  // Handle adding a meal to the order
+  const handleAddMeal = (meal) => {
+    if (!editableOrder) return;
+    
+    console.log('Adding meal:', meal);
+    
+    const existingMealIndex = editableOrder.meals.findIndex(
+      m => m.meal_id === meal.id || m.meal_id === meal.meal_id
+    );
+    
+    let updatedMeals = [...editableOrder.meals];
+    
+    if (existingMealIndex >= 0) {
+      const currentQuantity = updatedMeals[existingMealIndex].quantity || 1;
+      if (currentQuantity >= 20) {
+        notify.error('Maximum 20 meals of the same type allowed');
+        return;
+      }
+      
+      updatedMeals[existingMealIndex] = {
+        ...updatedMeals[existingMealIndex],
+        quantity: currentQuantity + 1
+      };
+    } else {
+      const newMeal = {
+        meal_id: meal.id || meal.meal_id,
+        name: meal.name,
+        quantity: 1,
+        price_at_order: meal.price
+      };
+      
+      updatedMeals = [...updatedMeals, newMeal];
+    }
+    
+    const newAddedMeal = {
+      meal_id: meal.id || meal.meal_id,
+      quantity: 1,
+      price: meal.price
+    };
+    
+    const ticketTotal = (editableOrder.tickets || []).reduce((sum, ticket) => {
+      const price = parseFloat(ticket.sold_price) || 0;
+      const quantity = parseInt(ticket.quantity) || 1;
+      return sum + (price * quantity);
+    }, 0);
+    
+    const mealTotal = updatedMeals.reduce((sum, meal) => {
+      const price = parseFloat(meal.price_at_order) || 0;
+      const quantity = parseInt(meal.quantity) || 1;
+      return sum + (price * quantity);
+    }, 0);
+    
+    const grossTotal = parseFloat((ticketTotal + mealTotal).toFixed(2));
+    const discountAmount = (editableOrder.payments || [])
+      .filter(payment => payment.method === 'discount')
+      .reduce((sum, payment) => sum + (parseFloat(payment.amount) || 0), 0);
+    const totalAmount = parseFloat((grossTotal - discountAmount).toFixed(2));
+    
+    let updatedPayments = [...editableOrder.payments];
+    const nonDiscountPayments = updatedPayments.filter(p => p.method !== 'discount');
+    
+    if (nonDiscountPayments.length === 1) {
+      const nonDiscountIndex = updatedPayments.findIndex(p => p.method !== 'discount');
+      updatedPayments[nonDiscountIndex].amount = totalAmount;
+    }
+    
+    setEditableOrder(prevState => ({
+      ...prevState,
+      meals: updatedMeals,
+      gross_total: grossTotal,
+      total_amount: totalAmount,
+      payments: updatedPayments,
+      addedMeals: [...(prevState.addedMeals || []), newAddedMeal]
+    }));
+    
+    notify.success(`Added meal: ${meal.name}`);
+  };
+
+  // Handle removing a meal from the order
+  const handleRemoveMeal = (mealId) => {
+    if (!editableOrder) return;
+    
+    const mealIndex = editableOrder.meals.findIndex(m => m.meal_id === mealId);
+    
+    if (mealIndex >= 0) {
+      const updatedMeals = [...editableOrder.meals];
+      
+      if (updatedMeals[mealIndex].quantity > 1) {
+        updatedMeals[mealIndex] = {
+          ...updatedMeals[mealIndex],
+          quantity: updatedMeals[mealIndex].quantity - 1
+        };
+      } else {
+        updatedMeals.splice(mealIndex, 1);
+      }
+      
+      setEditableOrder(prevState => ({
+        ...prevState,
+        meals: updatedMeals,
+        removedMeals: [...(prevState.removedMeals || []), { meal_id: mealId, quantity: 1 }]
+      }));
+      
+      setTimeout(() => recalculateOrderTotal(), 50);
+    }
+  };
+
+  // Payment method change handler
+  const handlePaymentMethodChange = (index, method) => {
+    if (!editableOrder) return;
+    
+    const oldMethod = editableOrder.payments[index].method;
+    const wasDiscount = oldMethod === 'discount';
+    const isDiscount = method === 'discount';
+    const updatedPayments = [...editableOrder.payments];
+    
+    updatedPayments[index] = { 
+      ...updatedPayments[index], 
+      method 
+    };
+    
+    setEditableOrder({
+      ...editableOrder,
+      payments: updatedPayments
+    });
+    
+    if (wasDiscount !== isDiscount) {
+      setTimeout(() => recalculateOrderTotal(), 50);
+    }
+  };
+
+  // Payment amount change handler
+  const handlePaymentAmountChange = (index, amount) => {
+    if (!editableOrder) return;
+    
+    const parsedAmount = parseFloat(amount) || 0;
+    const updatedPayments = [...editableOrder.payments];
+    const isDiscountPayment = updatedPayments[index].method === 'discount';
+    
+    updatedPayments[index] = { ...updatedPayments[index], amount: parsedAmount };
+    
+    const ticketTotal = Array.isArray(editableOrder.tickets) 
+      ? editableOrder.tickets.reduce((sum, ticket) => {
+          const price = parseFloat(ticket.sold_price) || 0;
+          const quantity = parseInt(ticket.quantity) || 1;
+          return sum + (price * quantity);
+        }, 0)
+      : 0;
+    
+    const mealTotal = Array.isArray(editableOrder.meals)
+      ? editableOrder.meals.reduce((sum, meal) => {
+          const price = parseFloat(meal.price_at_order) || 0;
+          const quantity = parseInt(meal.quantity) || 1;
+          return sum + (price * quantity);
+        }, 0)
+      : 0;
+    
+    const grossTotal = parseFloat((ticketTotal + mealTotal).toFixed(2));
+    const discountAmount = updatedPayments
+      .filter(payment => payment.method === 'discount')
+      .reduce((sum, payment) => sum + (parseFloat(payment.amount) || 0), 0);
+    const totalAmount = parseFloat((grossTotal - discountAmount).toFixed(2));
+    
+    if (isDiscountPayment && parsedAmount > grossTotal) {
+      notify.error(`Discount amount cannot exceed gross total of ${formatCurrency(grossTotal)}`);
+      updatedPayments[index].amount = grossTotal;
+    }
+    
+    if (totalAmount < 0) {
+      notify.error('Total discount cannot exceed gross amount');
+      return;
+    }
+    
+    setEditableOrder(prevState => ({
+      ...prevState,
+      payments: updatedPayments,
+      gross_total: grossTotal,
+      total_amount: Math.max(0, totalAmount)
+    }));
+  };
+
+  // Add payment method
+  const handleAddPayment = () => {
+    if (!editableOrder) return;
+    
+    if (editableOrder.payments.length >= 5) {
+      notify.error('Maximum 5 payment methods allowed per order');
+      return;
+    }
+    
+    const grossTotal = parseFloat(editableOrder.gross_total || 0);
+    const discountAmount = editableOrder.payments
+      .filter(payment => payment.method === 'discount')
+      .reduce((sum, payment) => sum + (parseFloat(payment.amount) || 0), 0);
+    
+    const netTotal = grossTotal - discountAmount;
+    const nonDiscountTotal = editableOrder.payments
+      .filter(payment => payment.method !== 'discount')
+      .reduce((sum, payment) => sum + (parseFloat(payment.amount) || 0), 0);
+    
+    const remainingAmount = Math.max(0, netTotal - nonDiscountTotal);
+    const newPaymentAmount = remainingAmount > 0 ? remainingAmount : 0;
+    
+    const updatedPayments = [
+      ...editableOrder.payments,
+      { method: 'cash', amount: newPaymentAmount }
+    ];
+    
+    setEditableOrder({
+      ...editableOrder,
+      payments: updatedPayments
+    });
+    
+    if (newPaymentAmount > 0) {
+      notify.info(`Added payment method with remaining amount: ${formatCurrency(newPaymentAmount)}`);
+    }
+  };
+
+  // Remove payment method
+  const handleRemovePayment = (index) => {
+    if (!editableOrder || editableOrder.payments.length <= 1) {
+      notify.error('At least one payment method is required');
+      return;
+    }
+    
+    const updatedPayments = [...editableOrder.payments];
+    const removedPayment = updatedPayments[index];
+    
+    updatedPayments.splice(index, 1);
+    
+    setEditableOrder({
+      ...editableOrder,
+      payments: updatedPayments
+    });
+    
+    if (removedPayment.method === 'discount') {
+      setTimeout(() => recalculateOrderTotal(), 50);
+    }
+    
+    notify.info(`Removed ${formatPaymentMethod(removedPayment.method)} payment method`);
+  };
+
+  // Recalculate order total
+  const recalculateOrderTotal = () => {
+    if (!editableOrder) return;
+    
+    setTimeout(() => {
+      setEditableOrder(prev => {
+        if (!prev) return null;
+        
+        const ticketTotal = Array.isArray(prev.tickets) 
+          ? prev.tickets.reduce((sum, ticket) => {
+              const price = parseFloat(ticket.sold_price) || 0;
+              const quantity = parseInt(ticket.quantity) || 1;
+              return sum + (price * quantity);
+            }, 0)
+          : 0;
+        
+        const mealTotal = Array.isArray(prev.meals)
+          ? prev.meals.reduce((sum, meal) => {
+              const price = parseFloat(meal.price_at_order) || 0;
+              const quantity = parseInt(meal.quantity) || 1;
+              return sum + (price * quantity);
+            }, 0)
+          : 0;
+        
+        const grossTotal = parseFloat((ticketTotal + mealTotal).toFixed(2));
+        const discountAmount = Array.isArray(prev.payments)
+          ? prev.payments
+              .filter(payment => payment.method === 'discount')
+              .reduce((sum, payment) => sum + (parseFloat(payment.amount) || 0), 0)
+          : 0;
+        
+        const totalAmount = parseFloat((grossTotal - discountAmount).toFixed(2));
+        let updatedPayments = [...prev.payments];
+        const nonDiscountPayments = updatedPayments.filter(p => p.method !== 'discount');
+        
+        if (nonDiscountPayments.length === 1) {
+          const nonDiscountIndex = updatedPayments.findIndex(p => p.method !== 'discount');
+          updatedPayments[nonDiscountIndex].amount = totalAmount;
+        }
+        
+        return {
+          ...prev,
+          gross_total: grossTotal,
+          total_amount: totalAmount,
+          payments: updatedPayments
+        };
+      });
+    }, 0);
+  };
+
+  // Save order changes with validation
+  const saveOrderChanges = async () => {
+    if (!baseUrl) {
+      notify.error('API configuration not available');
+      return;
+    }
+
+    try {
+      if (!editableOrder || !selectedOrder) return;
+      
+      // 1. Check if there's a payment total difference (like old file)
+      const totalPayments = editableOrder.payments.reduce((sum, p) => sum + (parseFloat(p.amount) || 0), 0);
+      const orderTotal = parseFloat(editableOrder.total_amount) || 0;
+      const difference = Math.abs(totalPayments - orderTotal);
+      const isPaymentValid = difference < 0.01;
+      
+      if (!isPaymentValid) {
+        notify.error(
+          `Payment total (${formatCurrency(totalPayments)}) must match order total (${formatCurrency(orderTotal)}). Difference: ${formatCurrency(difference)}`
+        );
+        return;
+      }
+      
+      // 2. Check if any changes were actually made (like old file)
+      const hasTicketChanges = (editableOrder.addedTickets && editableOrder.addedTickets.length > 0) ||
+                              (editableOrder.removedTickets && editableOrder.removedTickets.length > 0);
+      
+      const hasMealChanges = (editableOrder.addedMeals && editableOrder.addedMeals.length > 0) ||
+                            (editableOrder.removedMeals && editableOrder.removedMeals.length > 0);
+      
+      // Check if payments changed by comparing with original payments
+      const hasPaymentChanges = JSON.stringify(editableOrder.payments.map(p => ({
+        method: p.method,
+        amount: parseFloat(p.amount).toFixed(2)
+      }))) !== JSON.stringify((editableOrder.originalPayments || []).map(p => ({
+        method: p.method,
+        amount: parseFloat(p.amount).toFixed(2)
+      })));
+      
+      const hasAnyChanges = hasTicketChanges || hasMealChanges || hasPaymentChanges;
+      
+      if (!hasAnyChanges) {
+        notify.warning('No changes detected. Please make changes before saving.');
+        return;
+      }
+      
+      // 3. Additional validations from old file
+      if (!editableOrder.tickets?.length && !editableOrder.meals?.length) {
+        notify.error('Order must contain at least one ticket or meal');
+        return;
+      }
+      
+      if (!editableOrder.payments?.length) {
+        notify.error('Order must have at least one payment method');
+        return;
+      }
+      
+      const hasNegativePayment = editableOrder.payments.some(p => (parseFloat(p.amount) || 0) < 0);
+      if (hasNegativePayment) {
+        notify.error('Payment amounts must be positive');
+        return;
+      }
+      
+      if ((parseFloat(editableOrder.total_amount) || 0) < 0) {
+        notify.error('Order total cannot be negative');
+        return;
+      }
+      
+      // 4. Validate discount doesn't exceed gross total
+      const discountAmount = editableOrder.payments
+        .filter(payment => payment.method === 'discount')
+        .reduce((sum, payment) => sum + (parseFloat(payment.amount) || 0), 0);
+      
+      const grossTotal = parseFloat(editableOrder.gross_total || 0);
+      
+      if (discountAmount > grossTotal) {
+        notify.error(`Total discount (${formatCurrency(discountAmount)}) cannot exceed gross total (${formatCurrency(grossTotal)})`);
+        return;
+      }
+      
+      setLoading(true);
+      const token = localStorage.getItem('authToken');
+      
+      if (!token) {
+        notify.error('Authentication required. Please log in again.');
+        setLoading(false);
+        return;
+      }
+      
+      // Format payload with careful number parsing and validation
+      const payments = editableOrder.payments.map(payment => {
+        const amount = Number(parseFloat(payment.amount).toFixed(2));
+        if (isNaN(amount) || amount < 0) {
+          throw new Error(`Invalid payment amount: ${payment.amount}`);
+        }
+        return {
+          method: payment.method,
+          amount: amount
+        };
+      });
+      
+      // Sanitize and validate arrays before sending
+      const addedTickets = Array.isArray(editableOrder.addedTickets) 
+        ? editableOrder.addedTickets.map(ticket => ({
+            ...ticket,
+            quantity: Number(ticket.quantity)
+          })).filter(ticket => ticket.quantity > 0)
+        : [];
+        
+      const removedTickets = Array.isArray(editableOrder.removedTickets)
+        ? editableOrder.removedTickets.map(ticket => ({
+            ...ticket,
+            quantity: Number(ticket.quantity)
+          })).filter(ticket => ticket.quantity > 0)
+        : [];
+        
+      const addedMeals = Array.isArray(editableOrder.addedMeals)
+        ? editableOrder.addedMeals.map(meal => ({
+            ...meal,
+            quantity: Number(meal.quantity),
+            price: Number(parseFloat(meal.price).toFixed(2))
+          })).filter(meal => meal.quantity > 0)
+        : [];
+        
+      const removedMeals = Array.isArray(editableOrder.removedMeals)
+        ? editableOrder.removedMeals.map(meal => ({
+            ...meal,
+            quantity: Number(meal.quantity)
+          })).filter(meal => meal.quantity > 0)
+        : [];
+    
+      // Build the update payload
+      const updatePayload = {
+        order_id: selectedOrder.order_id,
+        addedTickets,
+        removedTickets,
+        addedMeals,
+        removedMeals,
+        payments
+      };
+      
+      console.log('Sending update payload:', updatePayload);
+      console.log('Changes detected:', {
+        hasTicketChanges,
+        hasMealChanges,
+        hasPaymentChanges,
+        totalChanges: addedTickets.length + removedTickets.length + addedMeals.length + removedMeals.length
+      });
+      
+      // Show loading notification
+      const loadingToast = notify.info('Updating order...', { autoClose: false });
+      
+      // Send the update request
+      const response = await axios.put(
+        `${baseUrl}/api/orders/update`,
+        updatePayload,
+        { 
+          headers: { Authorization: `Bearer ${token}` },
+          timeout: 30000 // 30 second timeout
+        }
+      );
+      
+      console.log('Update response:', response.data);
+      
+      // Dismiss loading toast
+      notify.dismiss(loadingToast);
+      
+      // Close dialog and show success message
+      handleCloseEditDialog();
+      notify.success(`✅ Order #${selectedOrder.order_id} updated successfully`);
+      
+      // Refresh orders list
+      await fetchOrders();
+      
+    } catch (error) {
+      console.error('Error updating order:', error.response?.data || error);
+      
+      // Enhanced error handling with specific messages
+      let errorMessage = 'Failed to update order';
+      
+      if (error.response?.status === 400) {
+        errorMessage = error.response.data?.message || 'Invalid order data provided';
+      } else if (error.response?.status === 404) {
+        errorMessage = 'Order not found - it may have been deleted';
+      } else if (error.response?.status === 403) {
+        errorMessage = 'You do not have permission to edit this order';
+      } else if (error.response?.status === 409) {
+        errorMessage = 'Order has been modified by another user. Please refresh and try again.';
+      } else if (error.code === 'ECONNABORTED') {
+        errorMessage = 'Request timed out. Please check your connection and try again.';
+      } else if (error.response?.data?.message) {
+        errorMessage = error.response.data.message;
+      }
+      
+      notify.error(`❌ ${errorMessage}`);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // Render edit tab content
+  const renderEditTabContent = () => {
+    if (!editableOrder) return null;
+
+    switch (editTab) {
+      case 0: // Tickets Tab
+        return (
+          <Box>
+            <Typography variant={isMobile ? "body1" : "h6"} gutterBottom>
+              Current Tickets
+            </Typography>
+            {editableOrder.tickets.length === 0 ? (
+              <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
+                No tickets in this order
+              </Typography>
+            ) : (
+              <List sx={{ mb: 2, maxHeight: { xs: 200, sm: 300 }, overflow: 'auto' }}>
+                {editableOrder.tickets.map((ticket, index) => (
+                  <ListItem key={index} divider>
+                    <ListItemText
+                      primary={
+                        <Typography variant={isMobile ? "body2" : "body1"}>
+                          {ticket.category} - {ticket.subcategory}
+                        </Typography>
+                      }
+                      secondary={
+                        <Typography variant="caption" color="text.secondary">
+                          {formatCurrency(ticket.sold_price)} each
+                        </Typography>
+                      }
+                    />
+                    <ListItemSecondaryAction>
+                      <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                        <IconButton 
+                          size="small" 
+                          onClick={() => handleRemoveTicket(ticket.ticket_type_id)}
+                        >
+                          <RemoveIcon />
+                        </IconButton>
+                        <Typography variant="body2" sx={{ minWidth: 20, textAlign: 'center' }}>
+                          {ticket.quantity}
+                        </Typography>
+                        <IconButton 
+                          size="small" 
+                          onClick={() => handleAddTicket({
+                            id: ticket.ticket_type_id,
+                            category: ticket.category,
+                            subcategory: ticket.subcategory,
+                            price: ticket.sold_price
+                          })}
+                        >
+                          <AddIcon />
+                        </IconButton>
+                      </Box>
+                    </ListItemSecondaryAction>
+                  </ListItem>
+                ))}
+              </List>
+            )}
+
+            <Divider sx={{ my: 2 }} />
+
+            <Typography variant={isMobile ? "body1" : "h6"} gutterBottom>
+              Add Tickets
+            </Typography>
+            <Box sx={{ maxHeight: { xs: 250, sm: 300 }, overflow: 'auto' }}>
+              <Grid container spacing={1}>
+                {availableTicketTypes.map((ticketType) => (
+                  <Grid item xs={12} sm={6} md={4} key={ticketType.id}>
+                    <Card 
+                      sx={{ 
+                        cursor: 'pointer',
+                        '&:hover': { backgroundColor: 'action.hover' },
+                        height: '100%'
+                      }}
+                      onClick={() => handleAddTicket(ticketType)}
+                    >
+                      <CardContent sx={{ p: { xs: 1, sm: 2 } }}>
+                        <Typography variant={isMobile ? "caption" : "body2"} fontWeight="bold">
+                          {ticketType.name}
+                        </Typography>
+                        <Typography variant="caption" color="text.secondary" display="block">
+                          {ticketType.category} - {ticketType.subcategory}
+                        </Typography>
+                        <Typography variant={isMobile ? "caption" : "body2"} color="primary">
+                          {formatCurrency(ticketType.price)}
+                        </Typography>
+                      </CardContent>
+                    </Card>
+                  </Grid>
+                ))}
+              </Grid>
+            </Box>
+          </Box>
+        );
+
+      case 1: // Meals Tab
+        return (
+          <Box>
+            <Typography variant={isMobile ? "body1" : "h6"} gutterBottom>
+              Current Meals
+            </Typography>
+            {editableOrder.meals.length === 0 ? (
+              <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
+                No meals in this order
+              </Typography>
+            ) : (
+              <List sx={{ mb: 2, maxHeight: { xs: 200, sm: 300 }, overflow: 'auto' }}>
+                {editableOrder.meals.map((meal, index) => (
+                  <ListItem key={index} divider>
+                    <ListItemText
+                      primary={
+                        <Typography variant={isMobile ? "body2" : "body1"}>
+                          {meal.name}
+                        </Typography>
+                      }
+                      secondary={
+                        <Typography variant="caption" color="text.secondary">
+                          {formatCurrency(meal.price_at_order)} each
+                        </Typography>
+                      }
+                    />
+                    <ListItemSecondaryAction>
+                      <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                        <IconButton 
+                          size="small" 
+                          onClick={() => handleRemoveMeal(meal.meal_id)}
+                        >
+                          <RemoveIcon />
+                        </IconButton>
+                        <Typography variant="body2" sx={{ minWidth: 20, textAlign: 'center' }}>
+                          {meal.quantity}
+                        </Typography>
+                        <IconButton 
+                          size="small" 
+                          onClick={() => handleAddMeal({
+                            id: meal.meal_id,
+                            name: meal.name,
+                            price: meal.price_at_order
+                          })}
+                        >
+                          <AddIcon />
+                        </IconButton>
+                      </Box>
+                    </ListItemSecondaryAction>
+                  </ListItem>
+                ))}
+              </List>
+            )}
+
+            <Divider sx={{ my: 2 }} />
+
+            <Typography variant={isMobile ? "body1" : "h6"} gutterBottom>
+              Add Meals
+            </Typography>
+            <Box sx={{ maxHeight: { xs: 250, sm: 300 }, overflow: 'auto' }}>
+              <Grid container spacing={1}>
+                {availableMeals.map((meal) => (
+                  <Grid item xs={12} sm={6} md={4} key={meal.id}>
+                    <Card 
+                      sx={{ 
+                        cursor: 'pointer',
+                        '&:hover': { backgroundColor: 'action.hover' },
+                        height: '100%'
+                      }}
+                      onClick={() => handleAddMeal(meal)}
+                    >
+                      <CardContent sx={{ p: { xs: 1, sm: 2 } }}>
+                        <Typography variant={isMobile ? "caption" : "body2"} fontWeight="bold">
+                          {meal.name}
+                        </Typography>
+                        <Typography variant="caption" color="text.secondary" display="block">
+                          {meal.category}
+                        </Typography>
+                        <Typography variant={isMobile ? "caption" : "body2"} color="primary">
+                          {formatCurrency(meal.price)}
+                        </Typography>
+                      </CardContent>
+                    </Card>
+                  </Grid>
+                ))}
+              </Grid>
+            </Box>
+          </Box>
+        );
+
+      case 2: // Payment Tab
+        const totalPayments = editableOrder.payments.reduce((sum, p) => sum + (parseFloat(p.amount) || 0), 0);
+        const orderTotal = parseFloat(editableOrder.total_amount) || 0;
+        const difference = totalPayments - orderTotal;
+        const isValid = Math.abs(difference) < 0.01;
+        
+        return (
+          <Box>
+            <Typography variant={isMobile ? "body1" : "h6"} gutterBottom>
+              Payment Methods
+            </Typography>
+            <Stack spacing={2}>
+              {editableOrder.payments.map((payment, index) => (
+                <Box key={index} sx={{ display: 'flex', gap: 1, alignItems: 'center', flexWrap: 'wrap' }}>
+                  <FormControl size="small" sx={{ minWidth: { xs: 100, sm: 150 } }}>
+                    <InputLabel>Method</InputLabel>
+                    <Select
+                      value={payment.method}
+                      label="Method"
+                      onChange={(e) => handlePaymentMethodChange(index, e.target.value)}
+                    >
+                      {paymentMethods.map((method) => (
+                        <MenuItem 
+                          key={method.value} 
+                          value={method.value}
+                          sx={{ 
+                            color: method.value === 'discount' ? 'error.main' : 'inherit',
+                            fontWeight: method.value === 'CREDIT' ? 'bold' : 'normal'
+                          }}
+                        >
+                          {method.label}
+                        </MenuItem>
+                      ))}
+                    </Select>
+                  </FormControl>
+                  <TextField
+                    label="Amount"
+                    type="number"
+                    size="small"
+                    value={payment.amount}
+                    onChange={(e) => handlePaymentAmountChange(index, e.target.value)}
+                    sx={{ minWidth: { xs: 80, sm: 120 } }}
+                    inputProps={{ 
+                      step: "0.01", 
+                      min: "0",
+                      max: payment.method === 'discount' ? editableOrder.gross_total : undefined
+                    }}
+                    error={payment.method === 'discount' && payment.amount > (editableOrder.gross_total || 0)}
+                    helperText={
+                      payment.method === 'discount' && payment.amount > (editableOrder.gross_total || 0)
+                        ? 'Discount cannot exceed gross total'
+                        : undefined
+                    }
+                  />
+                  {editableOrder.payments.length > 1 && (
+                    <IconButton 
+                      color="error" 
+                      size="small"
+                      onClick={() => handleRemovePayment(index)}
+                      title="Remove payment method"
+                    >
+                      <DeleteIcon />
+                    </IconButton>
+                  )}
+                </Box>
+              ))}
+              
+              <Button
+                startIcon={<AddIcon />}
+                onClick={handleAddPayment}
+                variant="outlined"
+                size="small"
+                sx={{ alignSelf: 'flex-start' }}
+                disabled={editableOrder.payments.length >= 5}
+              >
+                Add Payment Method {editableOrder.payments.length >= 5 && '(Max 5)'}
+              </Button>
+              
+              <Box sx={{ 
+                mt: 2, 
+                p: 2, 
+                bgcolor: isValid ? 'success.light' : 'error.light', 
+                borderRadius: 1,
+                border: 1,
+                borderColor: isValid ? 'success.main' : 'error.main'
+              }}>
+                <Typography variant="body2" fontWeight="bold" gutterBottom>
+                  Payment Summary
+                </Typography>
+                <Typography variant="body2" color="text.secondary">
+                  Gross Total: {formatCurrency(editableOrder.gross_total || 0)}
+                </Typography>
+                {editableOrder.payments.some(p => p.method === 'discount') && (
+                  <Typography variant="body2" color="error.main">
+                    Discount: -{formatCurrency(
+                      editableOrder.payments
+                        .filter(p => p.method === 'discount')
+                        .reduce((sum, p) => sum + (parseFloat(p.amount) || 0), 0)
+                    )}
+                  </Typography>
+                )}
+                <Typography variant="body2" color="text.secondary">
+                  Net Total: {formatCurrency(orderTotal)}
+                </Typography>
+                <Typography variant="body2" color="text.secondary">
+                  Total Payments: {formatCurrency(totalPayments)}
+                </Typography>
+                <Typography 
+                  variant="body2" 
+                  color={isValid ? 'success.main' : 'error.main'}
+                  fontWeight="bold"
+                >
+                  {isValid ? '✅ ' : '❌ '}
+                  Difference: {formatCurrency(difference)}
+                  {!isValid && ' (Must be $0.00)'}
+                </Typography>
+              </Box>
+            </Stack>
+          </Box>
+        );
+
+      default:
+        return null;
+    }
+  };
+
   return (
     <LocalizationProvider dateAdapter={AdapterDayjs}>
-      <Box>
-        {/* Header and Controls */}
-        <Box sx={{ 
-          mb: 3, 
-          display: 'flex', 
-          justifyContent: 'space-between',
-          flexDirection: { xs: 'column', md: 'row' },
-          gap: 2
-        }}>
-          {/* Search bar */}
-          <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
-            <TextField
-              placeholder="Search orders..."
-              variant="outlined"
-              size="small"
-              value={searchTerm}
-              onChange={handleSearchChange}
-              sx={{ width: { xs: '100%', md: 300 } }}
-              InputProps={{
-                startAdornment: (
-                  <InputAdornment position="start">
-                    <SearchIcon fontSize="small" />
-                  </InputAdornment>
-                ),
-              }}
-            />
-          </Box>
+      <Box sx={{ p: { xs: 1, sm: 2, md: 3 } }}>
+        
+        {/* Compact Mobile Header */}
+        <Box sx={{ mb: 2 }}>
+          <Typography variant={isMobile ? "h6" : "h4"} fontWeight="bold" sx={{ mb: 1 }}>
+            Orders Management
+          </Typography>
+          
+          {/* Compact Search Bar */}
+          <TextField
+            placeholder="Search by Order ID or Cashier..."
+            variant="outlined"
+            size="small"
+            value={searchTerm}
+            onChange={handleSearchChange}
+            fullWidth
+            sx={{ mb: 1 }}
+            InputProps={{
+              startAdornment: (
+                <InputAdornment position="start">
+                  <SearchIcon fontSize="small" />
+                </InputAdornment>
+              ),
+              endAdornment: (
+                <InputAdornment position="end">
+                  <IconButton
+                    size="small"
+                    onClick={fetchOrders}
+                    disabled={loading}
+                    title="Refresh"
+                  >
+                    <RefreshIcon fontSize="small" />
+                  </IconButton>
+                </InputAdornment>
+              ),
+            }}
+          />
 
-          {/* Date range selector */}
-          <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
-            <Box sx={{ display: 'flex', alignItems: 'center' }}>
-              <DatePicker
-                label="From Date"
-                value={fromDate}
-                onChange={handleFromDateChange}
-                slotProps={{ textField: { size: 'small' } }}
-                sx={{ width: 150 }}
-              />
-              <Typography sx={{ mx: 1 }}>-</Typography>
-              <DatePicker
-                label="To Date"
-                value={toDate}
-                onChange={handleToDateChange}
-                slotProps={{ textField: { size: 'small' } }}
-                sx={{ width: 150 }}
-              />
-            </Box>
+          {/* Compact Date Controls - Collapsible */}
+          <Box>
+            <Button
+              size="small"
+              onClick={() => setFilterMenuOpen(!filterMenuOpen)}
+              endIcon={filterMenuOpen ? <ExpandLessIcon /> : <ExpandMoreIcon />}
+              sx={{ mb: 1, textTransform: 'none', fontSize: '0.8rem' }}
+              startIcon={<DateRangeIcon />}
+              variant="outlined"
+              fullWidth
+            >
+              {fromDate.format('MMM DD')} - {toDate.format('MMM DD')} ({filteredOrders.length} orders)
+            </Button>
             
+            <Collapse in={filterMenuOpen}>
+              <Box sx={{ p: 1, bgcolor: 'grey.50', borderRadius: 1, mb: 1 }}>
+                {/* Compact Date Pickers */}
+                <Stack direction="row" spacing={1} sx={{ mb: 1 }}>
+                  <DatePicker
+                    label="From"
+                    value={fromDate}
+                    onChange={handleFromDateChange}
+                    slotProps={{ 
+                      textField: { 
+                        size: 'small',
+                        sx: { flex: 1 }
+                      } 
+                    }}
+                  />
+                  <DatePicker
+                    label="To"
+                    value={toDate}
+                    onChange={handleToDateChange}
+                    slotProps={{ 
+                      textField: { 
+                        size: 'small',
+                        sx: { flex: 1 }
+                      } 
+                    }}
+                  />
+                </Stack>
+
+                {/* Compact Quick Date Buttons */}
+                <Grid container spacing={0.5}>
+                  {[
+                    { key: 'today', label: 'Today' },
+                    { key: 'yesterday', label: 'Yesterday' },
+                    { key: 'week', label: '7 Days' },
+                    { key: 'month', label: '30 Days' },
+                    { key: 'quarter', label: '90 Days' }
+                  ].map(({ key, label }) => (
+                    <Grid item xs={6} sm={4} key={key}>
+                      <Button 
+                        variant={dateRange === key ? 'contained' : 'outlined'}
+                        size="small"
+                        onClick={() => handleDateRangeChange(key)}
+                        fullWidth
+                        sx={{ 
+                          fontSize: '0.7rem',
+                          minHeight: 'auto',
+                          py: 0.5
+                        }}
+                      >
+                        {label}
+                      </Button>
+                    </Grid>
+                  ))}
+                </Grid>
+              </Box>
+            </Collapse>
+          </Box>
+        </Box>
+
+        {/* Responsive Orders Display */}
+        {loading ? (
+          <Box sx={{ display: 'flex', justifyContent: 'center', py: 4 }}>
+            <CircularProgress size={32} />
+          </Box>
+        ) : error ? (
+          <Paper sx={{ p: 2, textAlign: 'center', borderRadius: 2 }}>
+            <Typography color="error" variant="body2" sx={{ mb: 1 }}>
+              {error}
+            </Typography>
             <Button
               variant="outlined"
               onClick={fetchOrders}
-              startIcon={<RefreshIcon />}
+              size="small"
             >
-              Refresh
+              Retry
             </Button>
-          </Box>
-        </Box>
+          </Paper>
+        ) : filteredOrders.length === 0 ? (
+          <Paper sx={{ p: 2, textAlign: 'center', borderRadius: 2 }}>
+            <Typography variant="body2">
+              No orders found for the selected period
+            </Typography>
+          </Paper>
+        ) : (
+          <>
+            {/* Mobile Card View */}
+            {isMobile ? (
+              <Box>
+                {filteredOrders
+                  .slice(page * rowsPerPage, page * rowsPerPage + rowsPerPage)
+                  .map((order) => {
+                    const orderDate = new Date(order.created_at);
+                    const ticketCount = order.tickets ? 
+                      order.tickets.reduce((sum, ticket) => sum + (ticket.quantity || 0), 0) : 0;
+                    const mealCount = order.meals ? 
+                      order.meals.reduce((sum, meal) => sum + (meal.quantity || 0), 0) : 0;
 
-        {/* Quick date range buttons */}
-        <Box sx={{ display: 'flex', gap: 1, mb: 3, flexWrap: 'wrap' }}>
-          <Button 
-            variant={dateRange === 'today' ? 'contained' : 'outlined'}
-            size="small"
-            onClick={() => handleDateRangeChange('today')}
-          >
-            Today
-          </Button>
-          <Button 
-            variant={dateRange === 'yesterday' ? 'contained' : 'outlined'}
-            size="small"
-            onClick={() => handleDateRangeChange('yesterday')}
-          >
-            Yesterday
-          </Button>
-          <Button 
-            variant={dateRange === 'week' ? 'contained' : 'outlined'}
-            size="small"
-            onClick={() => handleDateRangeChange('week')}
-          >
-            Last 7 Days
-          </Button>
-          <Button 
-            variant={dateRange === 'month' ? 'contained' : 'outlined'}
-            size="small"
-            onClick={() => handleDateRangeChange('month')}
-          >
-            Last 30 Days
-          </Button>
-          <Button 
-            variant={dateRange === 'quarter' ? 'contained' : 'outlined'}
-            size="small"
-            onClick={() => handleDateRangeChange('quarter')}
-          >
-            Last 90 Days
-          </Button>
-        </Box>
+                    return (
+                      <Card key={order.order_id} sx={{ 
+                        mb: 1.5, 
+                        borderRadius: 2,
+                        boxShadow: '0 1px 4px rgba(0,0,0,0.1)'
+                      }}>
+                        <CardContent sx={{ p: 1.5, pb: 1 }}>
+                          {/* Compact Header */}
+                          <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 1 }}>
+                            <Typography variant="subtitle2" color="primary" fontWeight="bold">
+                              #{order.order_id}
+                            </Typography>
+                            <Typography variant="subtitle2" fontWeight="bold" color="success.main">
+                              {formatCurrency(order.total_amount)}
+                            </Typography>
+                          </Box>
 
-        {/* Orders Table */}
-        <Paper sx={{ width: '100%', overflow: 'hidden', borderRadius: 2 }}>
-          {loading ? (
-            <Box sx={{ display: 'flex', justifyContent: 'center', py: 4 }}>
-              <CircularProgress />
-            </Box>
-          ) : error ? (
-            <Box sx={{ p: 3, textAlign: 'center' }}>
-              <Typography color="error">{error}</Typography>
-              <Button
-                variant="outlined"
-                onClick={fetchOrders}
-                sx={{ mt: 2 }}
-              >
-                Retry
-              </Button>
-            </Box>
-          ) : filteredOrders.length === 0 ? (
-            <Box sx={{ p: 3, textAlign: 'center' }}>
-              <Typography>No orders found for the selected period</Typography>
+                          {/* Compact Info Row */}
+                          <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 1 }}>
+                            <Typography variant="caption" color="text.secondary">
+                              {orderDate.toLocaleDateString()} {orderDate.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                            </Typography>
+                            <Typography variant="caption" color="text.secondary">
+                              {order.user_name || 'Unknown'}
+                            </Typography>
+                          </Box>
+
+                          {/* Compact Items & Payments */}
+                          <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 0.5 }}>
+                            <Box sx={{ display: 'flex', gap: 0.5 }}>
+                              {ticketCount > 0 && (
+                                <Chip 
+                                  label={`${ticketCount}T`}
+                                  size="small"
+                                  color="primary"
+                                  variant="outlined"
+                                  sx={{ height: 20, fontSize: '0.65rem' }}
+                                />
+                              )}
+                              {mealCount > 0 && (
+                                <Chip 
+                                  label={`${mealCount}M`}
+                                  size="small"
+                                  color="secondary"
+                                  variant="outlined"
+                                  sx={{ height: 20, fontSize: '0.65rem' }}
+                                />
+                              )}
+                            </Box>
+                            
+                            <Box sx={{ display: 'flex', gap: 0.5 }}>
+                              {order.payments && order.payments.slice(0, 2).map((payment, index) => (
+                                <Chip 
+                                  key={index}
+                                  label={formatPaymentMethod(payment.method).substring(0, 4)}
+                                  size="small"
+                                  color={getPaymentMethodColor(payment.method)}
+                                  variant="outlined"
+                                  sx={{ height: 20, fontSize: '0.6rem' }}
+                                />
+                              ))}
+                              {order.payments && order.payments.length > 2 && (
+                                <Chip 
+                                  label={`+${order.payments.length - 2}`}
+                                  size="small"
+                                  variant="outlined"
+                                  sx={{ height: 20, fontSize: '0.6rem' }}
+                                />
+                              )}
+                            </Box>
+                          </Box>
+                        </CardContent>
+
+                        <CardActions sx={{ pt: 0, px: 1.5, pb: 1, justifyContent: 'flex-end' }}>
+                          <IconButton
+                            size="small"
+                            color="primary"
+                            onClick={() => handleOpenEditDialog(order)}
+                            sx={{ p: 0.5 }}
+                          >
+                            <EditIcon fontSize="small" />
+                          </IconButton>
+                          <IconButton
+                            size="small"
+                            color="error"
+                            onClick={() => handleDeleteOrder(order)}
+                            sx={{ p: 0.5 }}
+                          >
+                            <DeleteIcon fontSize="small" />
+                          </IconButton>
+                        </CardActions>
+                      </Card>
+                    );
+                  })}
+              
+              {/* Compact Mobile Pagination */}
+              <Box sx={{ 
+                display: 'flex', 
+                justifyContent: 'space-between', 
+                alignItems: 'center', 
+                mt: 1,
+                px: 1
+              }}>
+                <Typography variant="caption" color="text.secondary">
+                  {page * rowsPerPage + 1}-{Math.min((page + 1) * rowsPerPage, filteredOrders.length)} of {filteredOrders.length}
+                </Typography>
+                <Box>
+                  <IconButton
+                    size="small"
+                    disabled={page === 0}
+                    onClick={(e) => handleChangePage(e, page - 1)}
+                  >
+                    <ExpandMoreIcon sx={{ transform: 'rotate(90deg)' }} />
+                  </IconButton>
+                  <IconButton
+                    size="small"
+                    disabled={page >= Math.ceil(filteredOrders.length / rowsPerPage) - 1}
+                    onClick={(e) => handleChangePage(e, page + 1)}
+                  >
+                    <ExpandMoreIcon sx={{ transform: 'rotate(-90deg)' }} />
+                  </IconButton>
+                </Box>
+              </Box>
             </Box>
           ) : (
-            <>
+            /* Desktop Table View - Keep existing */
+            <Paper sx={{ width: '100%', overflow: 'hidden', borderRadius: 2 }}>
               <TableContainer sx={{ maxHeight: 'calc(100vh - 300px)' }}>
                 <Table stickyHeader>
                   <TableHead>
                     <TableRow>
                       <TableCell sx={{ fontWeight: 'bold' }}>Order ID</TableCell>
                       <TableCell sx={{ fontWeight: 'bold' }}>Date & Time</TableCell>
-                      <TableCell sx={{ fontWeight: 'bold' }}>Cashier</TableCell> {/* Changed from Customer to Cashier */}
+                      <TableCell sx={{ fontWeight: 'bold' }}>Cashier</TableCell>
                       <TableCell sx={{ fontWeight: 'bold' }}>Items</TableCell>
                       <TableCell sx={{ fontWeight: 'bold' }}>Payment</TableCell>
                       <TableCell sx={{ fontWeight: 'bold' }} align="right">Total</TableCell>
@@ -1294,7 +1864,6 @@ const OrdersManagement = () => {
                       .map((order) => {
                         const orderDate = new Date(order.created_at);
                         
-                        // Calculate item counts
                         const ticketCount = order.tickets ? 
                           order.tickets.reduce((sum, ticket) => sum + (ticket.quantity || 0), 0) : 0;
                         
@@ -1319,7 +1888,7 @@ const OrdersManagement = () => {
                             <TableCell>
                               <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
                                 <PersonIcon fontSize="small" color="action" />
-                                <Typography>{order.user_name || 'Unknown'}</Typography> {/* Changed text from Anonymous to Unknown */}
+                                <Typography>{order.user_name || 'Unknown'}</Typography>
                               </Box>
                             </TableCell>
                             <TableCell>
@@ -1331,7 +1900,7 @@ const OrdersManagement = () => {
                                   color="primary"
                                   variant="outlined"
                                   sx={{ mr: 1, mb: 0.5 }}
-                                />
+                               />
                               )}
                               {mealCount > 0 && (
                                 <Chip 
@@ -1386,7 +1955,7 @@ const OrdersManagement = () => {
                 </Table>
               </TableContainer>
               <TablePagination
-                rowsPerPageOptions={[10, 25, 50]}
+                rowsPerPageOptions={[5, 10, 25]}
                 component="div"
                 count={filteredOrders.length}
                 rowsPerPage={rowsPerPage}
@@ -1394,358 +1963,227 @@ const OrdersManagement = () => {
                 onPageChange={handleChangePage}
                 onRowsPerPageChange={handleChangeRowsPerPage}
               />
-            </>
+            </Paper>
           )}
-        </Paper>
+        </>
 
-        {/* Edit Order Dialog */}
+        {/* Compact Mobile Edit Dialog */}
         <Dialog 
           open={editDialogOpen} 
           onClose={handleCloseEditDialog}
           fullWidth
-          maxWidth="md"
+          maxWidth="lg"
+          fullScreen={isSmallMobile}
+          PaperProps={{
+            sx: isMobile ? {
+              height: '100vh',
+              maxHeight: '100vh',
+              margin: 0,
+              borderRadius: 0
+            } : {}
+          }}
         >
-          <DialogTitle sx={{ pb: 1 }}>
-            <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-              <Typography variant="h6">Edit Order #{selectedOrder?.order_id}</Typography>
+          <DialogTitle sx={{ 
+            p: { xs: 1, sm: 2 },
+            fontSize: { xs: '1rem', sm: '1.5rem' }
+          }}>
+            <Stack 
+              direction="row"
+              justifyContent="space-between" 
+              alignItems="center"
+              spacing={1}
+            >
+              <Typography variant={isMobile ? "subtitle1" : "h5"} noWrap>
+                Edit #{selectedOrder?.order_id}
+              </Typography>
               <Chip 
                 label={formatCurrency(editableOrder?.total_amount || 0)}
                 color="primary"
-                size="medium"
+                size="small"
               />
-            </Box>
+            </Stack>
+            
+            {selectedOrder && (
+              <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mt: 0.5 }}>
+                {new Date(selectedOrder.created_at).toLocaleString()} • {selectedOrder.user_name}
+              </Typography>
+            )}
           </DialogTitle>
-          
-          <Box sx={{ px: 3, pb: 1 }}>
-            <Typography variant="body2" color="text.secondary">
-              {selectedOrder ? `Created on ${new Date(selectedOrder.created_at).toLocaleString()} by ${selectedOrder.user_name}` : ''}
-            </Typography>
-          </Box>
 
-          <Tabs value={editTab} onChange={handleEditTabChange} sx={{ px: 3, borderBottom: 1, borderColor: 'divider' }}>
-            <Tab icon={<LocalActivityIcon />} iconPosition="start" label="Tickets" />
-            <Tab icon={<RestaurantIcon />} iconPosition="start" label="Meals" />
-            <Tab icon={<PaymentIcon />} iconPosition="start" label="Payment" />
+          <Tabs 
+            value={editTab} 
+            onChange={handleEditTabChange} 
+            sx={{ 
+              px: { xs: 1, sm: 2 }, 
+              borderBottom: 1, 
+              borderColor: 'divider',
+              minHeight: 'auto'
+            }}
+            variant="fullWidth"
+          >
+            <Tab 
+              icon={<LocalActivityIcon fontSize="small" />} 
+              iconPosition="start"
+              label="Tickets"
+              sx={{ 
+                fontSize: '0.75rem',
+                minHeight: 'auto',
+                py: 1
+              }}
+            />
+            <Tab 
+              icon={<RestaurantIcon fontSize="small" />} 
+              iconPosition="start"
+              label="Meals"
+              sx={{ 
+                fontSize: '0.75rem',
+                minHeight: 'auto',
+                py: 1
+              }}
+            />
+            <Tab 
+              icon={<PaymentIcon fontSize="small" />} 
+              iconPosition="start"
+              label="Payment"
+              sx={{ 
+                fontSize: '0.75rem',
+                minHeight: 'auto',
+                py: 1
+              }}
+            />
           </Tabs>
           
-          <DialogContent dividers>
-            {editableOrder && (
-              <>
-                {/* Tickets Tab */}
-                {editTab === 0 && (
-                  <Grid container spacing={3}>
-                    <Grid item xs={12} md={6}>
-                      <Typography variant="h6" gutterBottom>Current Tickets</Typography>
-                      
-                      {(!editableOrder.tickets || editableOrder.tickets.length === 0) ? (
-                        <Typography color="text.secondary">No tickets in this order</Typography>
-                      ) : (
-                        <List>
-                          {editableOrder.tickets.map((ticket, index) => (
-                            <ListItem key={index} divider={index < (editableOrder.tickets.length - 1)}>
-                              <ListItemText 
-                                primary={`${ticket.category} - ${ticket.subcategory}`}
-                                secondary={`${ticket.quantity} x ${formatCurrency(ticket.sold_price)}`}
-                              />
-                              <ListItemSecondaryAction>
-                                <IconButton 
-                                  edge="end" 
-                                  color="error"
-                                  onClick={() => handleRemoveTicket(ticket.ticket_type_id)}
-                                >
-                                  <RemoveIcon />
-                                </IconButton>
-                              </ListItemSecondaryAction>
-                            </ListItem>
-                          ))}
-                        </List>
-                      )}
-                    </Grid>
-                    
-                    <Grid item xs={12} md={6}>
-                      <Typography variant="h6" gutterBottom>Add Tickets</Typography>
-                      
-                      {(!availableTicketTypes || availableTicketTypes.length === 0) ? (
-                        <Typography color="text.secondary">No ticket types available</Typography>
-                      ) : (
-                        <List sx={{ maxHeight: 300, overflow: 'auto' }}>
-                          {availableTicketTypes.map((ticketType) => (
-                            <ListItem key={ticketType.id} divider>
-                              <ListItemText 
-                                primary={`${ticketType.category} - ${ticketType.subcategory}`}
-                                secondary={formatCurrency(ticketType.price)}
-                              />
-                              <ListItemSecondaryAction>
-                                <IconButton 
-                                  edge="end" 
-                                  color="primary"
-                                  onClick={() => handleAddTicket(ticketType)}
-                                >
-                                  <AddIcon />
-                                </IconButton>
-                              </ListItemSecondaryAction>
-                            </ListItem>
-                          ))}
-                        </List>
-                      )}
-                    </Grid>
-                  </Grid>
-                )}
-                
-                {/* Meals Tab */}
-                {editTab === 1 && (
-                  <Grid container spacing={3}>
-                    <Grid item xs={12} md={6}>
-                      <Typography variant="h6" gutterBottom>Current Meals</Typography>
-                      
-                      {(!editableOrder.meals || editableOrder.meals.length === 0) ? (
-                        <Typography color="text.secondary">No meals in this order</Typography>
-                      ) : (
-                        <List>
-                          {editableOrder.meals.map((meal, index) => (
-                            <ListItem key={index} divider={index < (editableOrder.meals.length - 1)}>
-                              <ListItemText 
-                                primary={meal.name}
-                                secondary={`${meal.quantity} x ${formatCurrency(meal.price_at_order)}`}
-                              />
-                              <ListItemSecondaryAction>
-                                <IconButton 
-                                  edge="end" 
-                                  color="error"
-                                  onClick={() => handleRemoveMeal(meal.meal_id)}
-                                >
-                                  <RemoveIcon />
-                                </IconButton>
-                              </ListItemSecondaryAction>
-                            </ListItem>
-                          ))}
-                        </List>
-                      )}
-                    </Grid>
-                    
-                    <Grid item xs={12} md={6}>
-                      <Typography variant="h6" gutterBottom>Add Meals</Typography>
-                      
-                      {(!availableMeals || availableMeals.length === 0) ? (
-                        <Typography color="text.secondary">No meals available</Typography>
-                      ) : (
-                        <List sx={{ maxHeight: 300, overflow: 'auto' }}>
-                          {availableMeals.map((meal) => (
-                            <ListItem key={meal.id} divider>
-                              <ListItemText 
-                                primary={meal.name}
-                                secondary={formatCurrency(meal.price)}
-                              />
-                              <ListItemSecondaryAction>
-                                <IconButton 
-                                  edge="end" 
-                                  color="primary"
-                                  onClick={() => handleAddMeal(meal)}
-                                >
-                                  <AddIcon />
-                                </IconButton>
-                              </ListItemSecondaryAction>
-                            </ListItem>
-                          ))}
-                        </List>
-                      )}
-                    </Grid>
-                  </Grid>
-                )}
-                
-                {/* Payments Tab */}
-                {editTab === 2 && (
-                  <Box>
-                    {/* Order Summary Section */}
-                    <Box sx={{ 
-                      p: 2, 
-                      mb: 3, 
-                      border: '1px solid #e0e0e0',
-                      borderRadius: 1,
-                      bgcolor: '#f9f9f9'
-                    }}>
-                      <Typography variant="h6" gutterBottom>Order Summary</Typography>
-                      
-                      <Box sx={{ display: 'flex', justifyContent: 'space-between', mb: 1 }}>
-                        <Typography>Gross Total:</Typography>
-                        <Typography fontWeight="medium">{formatCurrency(editableOrder.gross_total || 0)}</Typography>
-                      </Box>
-                      
-                      {/* Show discount info */}
-                      {editableOrder.payments && editableOrder.payments.some(p => p.method === 'discount') && (
-                        <Box sx={{ display: 'flex', justifyContent: 'space-between', mb: 1 }}>
-                          <Typography color="error">Discount:</Typography>
-                          <Typography color="error" fontWeight="medium">
-                            -{formatCurrency(editableOrder.payments
-                              .filter(p => p.method === 'discount')
-                              .reduce((sum, p) => sum + (parseFloat(p.amount) || 0), 0)
-                            )}
-                          </Typography>
-                        </Box>
-                      )}
-                      
-                      <Divider sx={{ my: 1 }} />
-                      
-                      <Box sx={{ display: 'flex', justifyContent: 'space-between', pt: 1 }}>
-                        <Typography fontWeight="bold">Net Total:</Typography>
-                        <Typography fontWeight="bold">{formatCurrency(editableOrder.total_amount)}</Typography>
-                      </Box>
-                    </Box>
-                    
-                    <Typography variant="h6" gutterBottom>Payment Methods</Typography>
-                    
-                    {(!editableOrder.payments || editableOrder.payments.length === 0) ? (
-                      <Typography color="text.secondary">No payment methods defined</Typography>
-                    ) : (
-                      <Grid container spacing={2}>
-                        {editableOrder.payments.map((payment, index) => (
-                          <Grid item xs={12} key={index}>
-                            <Box sx={{ display: 'flex', gap: 2, alignItems: 'center' }}>
-                              <FormControl sx={{ width: '50%' }}>
-                                <InputLabel>Payment Method</InputLabel>
-                                <Select
-                                  value={payment.method}
-                                  onChange={(e) => handlePaymentMethodChange(index, e.target.value)}
-                                  label="Payment Method"
-                                  size="small"
-                                >
-                                  {paymentMethods.map((method) => (
-                                    <MenuItem 
-                                      key={method.value} 
-                                      value={method.value}
-                                      sx={{ 
-                                        color: method.value === 'discount' ? 'error.main' : 'inherit',
-                                        fontWeight: method.value === 'CREDIT' ? 'bold' : 'normal'
-                                      }}
-                                    >
-                                      {method.label}
-                                    </MenuItem>
-                                  ))}
-                                </Select>
-                              </FormControl>
-                              
-                              <TextField
-                                label="Amount"
-                                type="number"
-                                value={payment.amount}
-                                onChange={(e) => handlePaymentAmountChange(index, e.target.value)}
-                                InputProps={{
-                                  startAdornment: <InputAdornment position="start">$</InputAdornment>,
-                                }}
-                                size="small"
-                                sx={{ width: '40%' }}
-                              />
-                              
-                              <IconButton
-                                color="error"
-                                onClick={() => handleRemovePayment(index)}
-                                disabled={editableOrder.payments.length <= 1}
-                              >
-                                <DeleteIcon />
-                              </IconButton>
-                            </Box>
-                          </Grid>
-                        ))}
-                      </Grid>
-                    )}
-                    
-                    {/* Payment validation message */}
-                    {!validatePaymentTotal() && (
-                      <Box sx={{ mt: 2, p: 1, bgcolor: '#fff4e5', borderRadius: 1 }}>
-                        <Typography color="error">
-                          Payment total must match order total of {formatCurrency(editableOrder.total_amount)}
-                        </Typography>
-                      </Box>
-                    )}
-                    
-                    {/* Add payment button */}
-                    <Box sx={{ display: 'flex', gap: 2, mt: 2 }}>
-                      <Button
-                        startIcon={<AddIcon />}
-                        onClick={handleAddPayment}
-                      >
-                        Add Payment Method
-                      </Button>
-                    </Box>
-                  </Box>
-                )}
-              </>
-            )}
+          <DialogContent dividers sx={{ 
+            p: { xs: 1, sm: 2 },
+            height: isSmallMobile ? 'calc(100vh - 180px)' : 'auto'
+          }}>
+            {renderEditTabContent()}
           </DialogContent>
           
-          <DialogActions>
-            <Button onClick={handleCloseEditDialog}>Cancel</Button>
+          <DialogActions sx={{ 
+            p: { xs: 1, sm: 2 },
+            gap: 1
+          }}>
+            <Button 
+              onClick={handleCloseEditDialog}
+              size="small"
+              sx={{ flex: 1 }}
+            >
+              Cancel
+            </Button>
             <Button 
               onClick={saveOrderChanges} 
               variant="contained"
-              startIcon={<SaveIcon />}
-              disabled={!validatePaymentTotal()}
+              startIcon={<SaveIcon fontSize="small" />}
+              disabled={
+                loading || 
+                !editableOrder || 
+                // Disable if payment difference exists
+                Math.abs(
+                  (editableOrder?.payments?.reduce((sum, p) => sum + (parseFloat(p.amount) || 0), 0) || 0) - 
+                  (parseFloat(editableOrder?.total_amount) || 0)
+                ) >= 0.01 ||
+                // Disable if no changes made
+                !(
+                  (editableOrder?.addedTickets && editableOrder.addedTickets.length > 0) ||
+                  (editableOrder?.removedTickets && editableOrder.removedTickets.length > 0) ||
+                  (editableOrder?.addedMeals && editableOrder.addedMeals.length > 0) ||
+                  (editableOrder?.removedMeals && editableOrder.removedMeals.length > 0) ||
+                  (editableOrder?.payments && editableOrder?.originalPayments && 
+                   JSON.stringify(editableOrder.payments.map(p => ({
+                     method: p.method,
+                     amount: parseFloat(p.amount).toFixed(2)
+                   }))) !== JSON.stringify((editableOrder.originalPayments || []).map(p => ({
+                     method: p.method,
+                     amount: parseFloat(p.amount).toFixed(2)
+                   }))))
+                )
+              }
+              size="small"
+              sx={{ flex: 2 }}
             >
-              Save Changes
+              {loading ? 'Saving...' : 'Save'}
             </Button>
           </DialogActions>
         </Dialog>
 
-        {/* Delete Order Confirmation Dialog */}
+        {/* Keep existing Delete Dialog but make it more compact */}
         <Dialog
           open={deleteDialogOpen}
           onClose={() => setDeleteDialogOpen(false)}
           maxWidth="sm"
           fullWidth
+          fullScreen={isSmallMobile}
         >
-          <DialogTitle sx={{ color: 'error.main', display: 'flex', alignItems: 'center', gap: 1 }}>
+          <DialogTitle sx={{ 
+            color: 'error.main', 
+            display: 'flex', 
+            alignItems: 'center', 
+            gap: 1,
+            fontSize: { xs: '1rem', sm: '1.5rem' },
+            p: { xs: 1.5, sm: 2 }
+          }}>
             <DeleteIcon />
             Delete Order
           </DialogTitle>
-          <DialogContent>
+          <DialogContent sx={{ p: { xs: 1.5, sm: 2 } }}>
             {orderToDelete && (
               <Box>
-                <Typography gutterBottom>
+                <Typography gutterBottom variant="body2">
                   Are you sure you want to delete <strong>Order #{orderToDelete.order_id}</strong>?
                 </Typography>
                 
-                <Box sx={{ mt: 2, p: 2, bgcolor: 'grey.100', borderRadius: 1 }}>
-                  <Typography variant="body2" color="text.secondary">
+                <Box sx={{ 
+                  mt: 1, 
+                  p: 1.5, 
+                  bgcolor: 'grey.100', 
+                  borderRadius: 1 
+                }}>
+                  <Typography variant="caption" color="text.secondary">
                     <strong>Order Details:</strong>
                   </Typography>
-                  <Typography variant="body2">
+                  <Typography variant="caption" display="block">
                     • Created: {new Date(orderToDelete.created_at).toLocaleString()}
                   </Typography>
-                  <Typography variant="body2">
+                  <Typography variant="caption" display="block">
                     • Cashier: {orderToDelete.user_name}
                   </Typography>
-                  <Typography variant="body2">
+                  <Typography variant="caption" display="block">
                     • Total: {formatCurrency(orderToDelete.total_amount)}
                   </Typography>
-                  {orderToDelete.tickets && (
-                    <Typography variant="body2">
-                      • Tickets: {orderToDelete.tickets.reduce((sum, t) => sum + (t.quantity || 0), 0)}
-                    </Typography>
-                  )}
-                  {orderToDelete.meals && (
-                    <Typography variant="body2">
-                      • Meals: {orderToDelete.meals.reduce((sum, m) => sum + (m.quantity || 0), 0)}
-                    </Typography>
-                  )}
                 </Box>
                 
-                <Typography variant="body2" color="error" sx={{ mt: 2, fontWeight: 'medium' }}>
-                  ⚠️ This action cannot be undone. All tickets will be returned to available status.
+                <Typography 
+                  variant="caption" 
+                  color="error" 
+                  sx={{ mt: 1, fontWeight: 'medium', display: 'block' }}
+                >
+                  ⚠️ This action cannot be undone.
                 </Typography>
               </Box>
             )}
           </DialogContent>
-          <DialogActions>
-            <Button onClick={() => setDeleteDialogOpen(false)}>
+          <DialogActions sx={{ 
+            p: { xs: 1.5, sm: 2 },
+            gap: 1
+          }}>
+            <Button 
+              onClick={() => setDeleteDialogOpen(false)}
+              size="small"
+              sx={{ flex: 1 }}
+            >
               Cancel
             </Button>
             <Button 
               onClick={confirmDeleteOrder}
               color="error"
               variant="contained"
-              startIcon={<DeleteIcon />}
+              startIcon={<DeleteIcon fontSize="small" />}
+              disabled={loading}
+              size="small"
+              sx={{ flex: 1 }}
             >
-              Delete Order
+              Delete
             </Button>
           </DialogActions>
         </Dialog>
