@@ -26,7 +26,11 @@ import {
   DialogContent,
   DialogActions,
   Pagination,
-  Alert
+  Alert,
+  useMediaQuery,
+  useTheme,
+  Stack,
+  Divider
 } from '@mui/material';
 import {
   ExpandMore as ExpandMoreIcon,
@@ -36,7 +40,8 @@ import {
   TrendingDown as DebtIcon,
   TrendingUp as SurplusIcon,
   FilterList as FilterListIcon,
-  Download as DownloadIcon
+  Download as DownloadIcon,
+  Close as CloseIcon
 } from '@mui/icons-material';
 import axios from 'axios';
 import { notify } from '../utils/toast';
@@ -55,6 +60,10 @@ const CreditReport = ({
   creditReportData,
   setCreditReportData
 }) => {
+  const theme = useTheme();
+  const isMobile = useMediaQuery(theme.breakpoints.down('md'));
+  const isSmallMobile = useMediaQuery(theme.breakpoints.down('sm'));
+
   const [selectedAccountFilter, setSelectedAccountFilter] = useState('all');
   const [expandedAccounts, setExpandedAccounts] = useState({});
   const [transactionsDialog, setTransactionsDialog] = useState({ open: false, accountId: null, accountName: '' });
@@ -221,7 +230,7 @@ const CreditReport = ({
     setTransactionsDialog({
       open: true,
       accountId,
-      accountName  // This was missing
+      accountName
     });
     setTransactionsPage(1);
     fetchCreditTransactions(accountId, 1);
@@ -271,7 +280,6 @@ const CreditReport = ({
       return str;
     };
 
-
     const formatDisplayDate = (date) => {
       return new Date(date).toLocaleDateString();
     };
@@ -293,21 +301,17 @@ const CreditReport = ({
     csvContent += `CREDIT ACCOUNT BREAKDOWN\r\n`;
     csvContent += `Account Name,Current Balance (EGP),Credit Used (EGP),Transactions Count,Status,Linked Categories\r\n`;
 
-    // Process each account - FIX: Use correct property names
+    // Process each account
     creditReportData.accounts.forEach(account => {
-      // FIX: Handle multiple linked categories by separating them with semicolons
       const linkedCategoriesText = account.linked_categories && account.linked_categories.length > 0
-        ? account.linked_categories.join('; ') // Use semicolon separator and join directly since it's already an array of strings
+        ? account.linked_categories.join('; ')
         : 'None';
 
-      const status = getAccountStatus(account.balance); // Use account.balance not account.current_balance
+      const status = getAccountStatus(account.balance);
       const statusText = status.type === 'debt' ? 'IN DEBT' : status.type === 'surplus' ? 'SURPLUS' : 'NEUTRAL';
 
       csvContent += `${escapeCSV(account.name)},${account.balance.toFixed(2)},${(account.credit_used_in_period || 0).toFixed(2)},${account.transactions_in_period || 0},${escapeCSV(statusText)},${escapeCSV(linkedCategoriesText)}\r\n`;
     });
-
-    // Transaction details if available
-    // Replace the CSV transaction export section (around line 250) with this corrected version:
 
     // Transaction details if available
     const hasTransactions = creditReportData.accounts.some(acc => acc.recent_transactions && acc.recent_transactions.length > 0);
@@ -320,7 +324,7 @@ const CreditReport = ({
           account.recent_transactions.forEach(transaction => {
             const transactionDate = new Date(transaction.created_at).toLocaleDateString();
             const transactionType = transaction.transaction_type ? transaction.transaction_type.replace('_', ' ') : 'N/A';
-            const amount = parseFloat(transaction.amount || 0); // FIX: Parse amount as float
+            const amount = parseFloat(transaction.amount || 0);
             csvContent += `${escapeCSV(account.name)},${transactionDate},${amount.toFixed(2)},${escapeCSV(transactionType)},${escapeCSV(transaction.description || 'Credit transaction')}\r\n`;
           });
         }
@@ -361,11 +365,24 @@ const CreditReport = ({
   }
 
   return (
-    <Box sx={{ p: 2 }}>
-      {/* Header with filters and export */}
-      <Box display="flex" justifyContent="space-between" alignItems="center" mb={2} gap={2}>
-        <Box display="flex" alignItems="center" gap={2}>
-          <FormControl size="small" sx={{ minWidth: 200 }}>
+    <Box sx={{ p: { xs: 1, sm: 2, md: 3 } }}>
+      {/* Responsive Header with filters and export */}
+      <Box sx={{ 
+        display: 'flex', 
+        justifyContent: 'space-between', 
+        alignItems: { xs: 'flex-start', sm: 'center' },
+        flexDirection: { xs: 'column', sm: 'row' },
+        gap: { xs: 2, sm: 1 }, 
+        mb: 2 
+      }}>
+        <Box sx={{ 
+          display: 'flex', 
+          alignItems: 'center', 
+          gap: { xs: 1, sm: 2 },
+          width: { xs: '100%', sm: 'auto' },
+          flexDirection: { xs: 'column', sm: 'row' }
+        }}>
+          <FormControl size="small" sx={{ minWidth: { xs: '100%', sm: 200 } }}>
             <InputLabel>Filter by Account</InputLabel>
             <Select
               value={selectedAccountFilter}
@@ -387,14 +404,19 @@ const CreditReport = ({
 
           {selectedAccountFilter !== 'all' && (
             <Chip
-              label={`Showing: ${selectedAccountFilter === 'surplus' ? 'Surplus Accounts' :
-                selectedAccountFilter === 'debt' ? 'Debt Accounts' :
-                  selectedAccountFilter === 'neutral' ? 'Neutral Balance' :
+              label={`${selectedAccountFilter === 'surplus' ? 'Surplus' :
+                selectedAccountFilter === 'debt' ? 'Debt' :
+                  selectedAccountFilter === 'neutral' ? 'Neutral' :
                     availableAccounts.find(a => a.id === selectedAccountFilter)?.name || 'Unknown'
                 }`}
               onDelete={() => setSelectedAccountFilter('all')}
               color="primary"
-              sx={{ bgcolor: '#00AEEF', color: 'white' }}
+              size={isSmallMobile ? "small" : "medium"}
+              sx={{ 
+                bgcolor: '#00AEEF', 
+                color: 'white',
+                fontSize: { xs: '0.75rem', sm: '0.875rem' }
+              }}
             />
           )}
         </Box>
@@ -402,20 +424,23 @@ const CreditReport = ({
         <Button
           variant="contained"
           onClick={exportCreditCSV}
-          startIcon={<DownloadIcon />}
+          startIcon={<DownloadIcon fontSize={isSmallMobile ? "small" : "medium"} />}
+          size={isSmallMobile ? "small" : "medium"}
+          fullWidth={isSmallMobile}
           sx={{
             background: "linear-gradient(45deg, #00AEEF 30%, #007EA7 90%)",
             boxShadow: "0 3px 5px 2px rgba(0,174,239,.3)",
+            fontSize: { xs: '0.75rem', sm: '0.875rem' },
             '&:hover': {
               background: "linear-gradient(45deg, #007EA7 30%, #005577 90%)",
             }
           }}
         >
-          💳 Export CSV
+          {isSmallMobile ? 'Export' : '💳 Export CSV'}
         </Button>
       </Box>
 
-      {/* Credit Accounts Cards */}
+      {/* Responsive Credit Accounts Cards */}
       {filteredAccounts.map((account) => {
         const status = getAccountStatus(account.balance);
         const isExpanded = expandedAccounts[account.id];
@@ -437,7 +462,7 @@ const CreditReport = ({
               boxShadow: `0 8px 25px ${status.color}30`
             }
           }}>
-            <CardContent sx={{ p: 2 }}>
+            <CardContent sx={{ p: { xs: 1.5, sm: 2 } }}>
               <Box
                 display="flex"
                 justifyContent="space-between"
@@ -445,30 +470,32 @@ const CreditReport = ({
                 sx={{ cursor: 'pointer' }}
                 onClick={() => toggleAccountExpansion(account.id)}
               >
-                <Box display="flex" alignItems="center" gap={1.5}>
+                <Box display="flex" alignItems="center" gap={{ xs: 1, sm: 1.5 }}>
                   <Avatar sx={{
                     bgcolor: status.color,
-                    width: 50,
-                    height: 50,
-                    fontSize: '1.5rem'
+                    width: { xs: 40, sm: 50 },
+                    height: { xs: 40, sm: 50 },
+                    fontSize: { xs: '1.2rem', sm: '1.5rem' }
                   }}>
                     {status.icon}
                   </Avatar>
                   <Box>
-                    <Typography variant="h6" sx={{
+                    <Typography variant={isMobile ? "subtitle1" : "h6"} sx={{
                       color: status.color,
                       fontWeight: 700,
-                      fontSize: '1.2rem'
+                      fontSize: { xs: '1rem', sm: '1.2rem' }
                     }}>
                       {account.name}
                     </Typography>
-                    <Typography variant="body2" color="textSecondary">
-                      {account.linked_categories.length} categories • {account.transactions_in_period} transactions in period
+                    <Typography variant="body2" color="textSecondary" sx={{
+                      fontSize: { xs: '0.75rem', sm: '0.875rem' }
+                    }}>
+                      {account.linked_categories.length} categories • {account.transactions_in_period} transactions
                     </Typography>
 
-                    {/* Linked Categories */}
+                    {/* Responsive Linked Categories */}
                     <Box mt={1} display="flex" gap={0.5} flexWrap="wrap">
-                      {account.linked_categories.map((category, index) => (
+                      {account.linked_categories.slice(0, isMobile ? 2 : 5).map((category, index) => (
                         <Chip
                           key={index}
                           label={category}
@@ -476,20 +503,32 @@ const CreditReport = ({
                           sx={{
                             bgcolor: '#00AEEF20',
                             color: '#00AEEF',
-                            fontSize: '0.7rem',
-                            height: '20px'
+                            fontSize: { xs: '0.6rem', sm: '0.7rem' },
+                            height: { xs: '18px', sm: '20px' }
                           }}
                         />
                       ))}
+                      {account.linked_categories.length > (isMobile ? 2 : 5) && (
+                        <Chip
+                          label={`+${account.linked_categories.length - (isMobile ? 2 : 5)} more`}
+                          size="small"
+                          sx={{
+                            bgcolor: '#f5f5f5',
+                            color: '#666',
+                            fontSize: { xs: '0.6rem', sm: '0.7rem' },
+                            height: { xs: '18px', sm: '20px' }
+                          }}
+                        />
+                      )}
                       {account.linked_categories.length === 0 && (
                         <Chip
-                          label="No categories linked"
+                          label="No categories"
                           size="small"
                           sx={{
                             bgcolor: '#ffcc0220',
                             color: '#f57c00',
-                            fontSize: '0.7rem',
-                            height: '20px'
+                            fontSize: { xs: '0.6rem', sm: '0.7rem' },
+                            height: { xs: '18px', sm: '20px' }
                           }}
                         />
                       )}
@@ -497,28 +536,36 @@ const CreditReport = ({
                   </Box>
                 </Box>
 
-                <Box display="flex" alignItems="center" gap={2}>
+                <Box display="flex" alignItems="center" gap={{ xs: 1, sm: 2 }}>
                   <Box textAlign="right">
-                    <Typography variant="h4" sx={{
+                    <Typography variant={isMobile ? "h6" : "h4"} sx={{
                       color: status.color,
                       fontWeight: 800,
-                      lineHeight: 1
+                      lineHeight: 1,
+                      fontSize: { xs: '1.25rem', sm: '2.125rem' }
                     }}>
-                      EGP {Math.abs(account.balance).toFixed(2)}
+                      {isSmallMobile ? (
+                        <>EGP {Math.abs(account.balance).toFixed(0)}</>
+                      ) : (
+                        <>EGP {Math.abs(account.balance).toFixed(2)}</>
+                      )}
                     </Typography>
                     <Chip
-                      label={status.type === 'debt' ? 'IN DEBT' : status.type === 'surplus' ? 'SURPLUS' : 'NEUTRAL'}
+                      label={status.type === 'debt' ? 'DEBT' : status.type === 'surplus' ? 'SURPLUS' : 'NEUTRAL'}
                       size="small"
                       sx={{
                         bgcolor: status.color,
                         color: 'white',
                         fontWeight: 600,
-                        fontSize: '0.7rem'
+                        fontSize: { xs: '0.6rem', sm: '0.7rem' },
+                        height: { xs: '18px', sm: '20px' }
                       }}
                     />
                     {account.credit_used_in_period > 0 && (
-                      <Typography variant="caption" display="block" color="textSecondary" mt={0.5}>
-                        Used: EGP {account.credit_used_in_period.toFixed(2)} (period)
+                      <Typography variant="caption" display="block" color="textSecondary" mt={0.5} sx={{
+                        fontSize: { xs: '0.6rem', sm: '0.75rem' }
+                      }}>
+                        Used: EGP {account.credit_used_in_period.toFixed(isSmallMobile ? 0 : 2)}
                       </Typography>
                     )}
                   </Box>
@@ -530,93 +577,122 @@ const CreditReport = ({
 
               <Collapse in={isExpanded} timeout="auto" unmountOnExit>
                 <Box mt={2}>
-                  {/* Account Details Section */}
+                  {/* Responsive Account Details Section */}
                   <Paper sx={{
-                    p: 2,
+                    p: { xs: 1.5, sm: 2 },
                     mb: 2,
                     bgcolor: 'rgba(0, 174, 239, 0.05)',
                     borderRadius: 2,
                     border: '1px solid #00AEEF30'
                   }}>
-                    <Typography variant="subtitle2" fontWeight="600" color="#00AEEF" mb={2}>
+                    <Typography variant="subtitle2" fontWeight="600" color="#00AEEF" mb={2} sx={{
+                      fontSize: { xs: '0.875rem', sm: '1rem' }
+                    }}>
                       💳 Account Details
                     </Typography>
 
-                    <Grid container spacing={2}>
-                      <Grid item xs={12} sm={6} md={3}>
+                    <Grid container spacing={{ xs: 1, sm: 2 }}>
+                      <Grid item xs={6} sm={6} md={3}>
                         <Box textAlign="center" p={1}>
-                          <Typography variant="body2" fontWeight="600" color={status.color}>
+                          <Typography variant="body2" fontWeight="600" color={status.color} sx={{
+                            fontSize: { xs: '0.75rem', sm: '0.875rem' }
+                          }}>
                             Current Balance
                           </Typography>
-                          <Typography variant="h5" color="text.primary" fontWeight="bold">
-                            EGP {account.balance.toFixed(2)}
+                          <Typography variant={isMobile ? "h6" : "h5"} color="text.primary" fontWeight="bold" sx={{
+                            fontSize: { xs: '1rem', sm: '1.5rem' }
+                          }}>
+                            EGP {account.balance.toFixed(isSmallMobile ? 0 : 2)}
                           </Typography>
-                          <Typography variant="caption" color="textSecondary">
+                          <Typography variant="caption" color="textSecondary" sx={{
+                            fontSize: { xs: '0.6rem', sm: '0.75rem' }
+                          }}>
                             {account.balance < 0 ? 'Owes money' : account.balance > 0 ? 'Has credit' : 'Balanced'}
                           </Typography>
                         </Box>
                       </Grid>
 
-                      <Grid item xs={12} sm={6} md={3}>
+                      <Grid item xs={6} sm={6} md={3}>
                         <Box textAlign="center" p={1}>
-                          <Typography variant="body2" fontWeight="600" color="#FF9800">
-                            Credit Used (Period)
+                          <Typography variant="body2" fontWeight="600" color="#FF9800" sx={{
+                            fontSize: { xs: '0.75rem', sm: '0.875rem' }
+                          }}>
+                            Credit Used
                           </Typography>
-                          <Typography variant="h5" color="text.primary" fontWeight="bold">
-                            EGP {account.credit_used_in_period.toFixed(2)}
+                          <Typography variant={isMobile ? "h6" : "h5"} color="text.primary" fontWeight="bold" sx={{
+                            fontSize: { xs: '1rem', sm: '1.5rem' }
+                          }}>
+                            EGP {account.credit_used_in_period.toFixed(isSmallMobile ? 0 : 2)}
                           </Typography>
-                          <Typography variant="caption" color="textSecondary">
-                            {useRange ? 'Date range' : 'Selected date'}
+                          <Typography variant="caption" color="textSecondary" sx={{
+                            fontSize: { xs: '0.6rem', sm: '0.75rem' }
+                          }}>
+                            {useRange ? 'Range' : 'Period'}
                           </Typography>
                         </Box>
                       </Grid>
 
-                      <Grid item xs={12} sm={6} md={3}>
+                      <Grid item xs={6} sm={6} md={3}>
                         <Box textAlign="center" p={1}>
-                          <Typography variant="body2" fontWeight="600" color="#9C27B0">
-                            Transactions (Period)
+                          <Typography variant="body2" fontWeight="600" color="#9C27B0" sx={{
+                            fontSize: { xs: '0.75rem', sm: '0.875rem' }
+                          }}>
+                            Transactions
                           </Typography>
-                          <Typography variant="h5" color="text.primary" fontWeight="bold">
+                          <Typography variant={isMobile ? "h6" : "h5"} color="text.primary" fontWeight="bold" sx={{
+                            fontSize: { xs: '1rem', sm: '1.5rem' }
+                          }}>
                             {account.transactions_in_period}
                           </Typography>
-                          <Typography variant="caption" color="textSecondary">
-                            Transaction count
+                          <Typography variant="caption" color="textSecondary" sx={{
+                            fontSize: { xs: '0.6rem', sm: '0.75rem' }
+                          }}>
+                            Count
                           </Typography>
                         </Box>
                       </Grid>
 
-                      <Grid item xs={12} sm={6} md={3}>
+                      <Grid item xs={6} sm={6} md={3}>
                         <Box textAlign="center" p={1}>
-                          <Typography variant="body2" fontWeight="600" color="#4CAF50">
-                            Linked Categories
+                          <Typography variant="body2" fontWeight="600" color="#4CAF50" sx={{
+                            fontSize: { xs: '0.75rem', sm: '0.875rem' }
+                          }}>
+                            Categories
                           </Typography>
-                          <Typography variant="h5" color="text.primary" fontWeight="bold">
+                          <Typography variant={isMobile ? "h6" : "h5"} color="text.primary" fontWeight="bold" sx={{
+                            fontSize: { xs: '1rem', sm: '1.5rem' }
+                          }}>
                             {account.linked_categories.length}
                           </Typography>
-                          <Typography variant="caption" color="textSecondary">
-                            Active links
+                          <Typography variant="caption" color="textSecondary" sx={{
+                            fontSize: { xs: '0.6rem', sm: '0.75rem' }
+                          }}>
+                            Linked
                           </Typography>
                         </Box>
                       </Grid>
                     </Grid>
                   </Paper>
 
-                  {/* Action Buttons */}
+                  {/* Responsive Action Buttons */}
                   <Box display="flex" gap={2} justifyContent="center">
                     <Button
                       variant="outlined"
-                      startIcon={<HistoryIcon />}
+                      startIcon={<HistoryIcon fontSize={isSmallMobile ? "small" : "medium"} />}
                       onClick={() => openTransactionsDialog(account.id, account.name)}
+                      size={isSmallMobile ? "small" : "medium"}
+                      fullWidth={isSmallMobile}
                       sx={{
                         borderColor: '#00AEEF',
                         color: '#00AEEF',
+                        fontSize: { xs: '0.75rem', sm: '0.875rem' },
                         '&:hover': {
                           borderColor: '#007EA7',
                           backgroundColor: '#E0F7FF',
                         }
                       }}
                     >
-                      View Transaction History
+                      {isSmallMobile ? 'Transactions' : 'View Transaction History'}
                     </Button>
                   </Box>
                 </Box>
@@ -632,84 +708,152 @@ const CreditReport = ({
         </Alert>
       )}
 
-      {/* Transaction History Dialog */}
+      {/* Responsive Transaction History Dialog */}
       <Dialog
         open={transactionsDialog.open}
         onClose={closeTransactionsDialog}
         maxWidth="lg"
         fullWidth
+        fullScreen={isSmallMobile}
+        PaperProps={{
+          sx: isMobile ? {
+            height: '100vh',
+            maxHeight: '100vh',
+            margin: 0,
+            borderRadius: 0
+          } : {}
+        }}
       >
-        <DialogTitle>
-          📝 Transaction History - {transactionsDialog.accountName}
+        <DialogTitle sx={{ 
+          p: { xs: 1.5, sm: 2 },
+          fontSize: { xs: '1rem', sm: '1.5rem' }
+        }}>
+          <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+            <Typography variant={isMobile ? "subtitle1" : "h6"} noWrap>
+              📝 Transactions - {transactionsDialog.accountName}
+            </Typography>
+            {isSmallMobile && (
+              <IconButton onClick={closeTransactionsDialog} size="small">
+                <CloseIcon />
+              </IconButton>
+            )}
+          </Box>
         </DialogTitle>
-        <DialogContent>
+        <DialogContent sx={{ p: { xs: 1, sm: 2 } }}>
           {loadingTransactions ? (
             <Box display="flex" justifyContent="center" p={3}>
               <Typography>Loading transactions...</Typography>
             </Box>
           ) : (
             <>
-              <TableContainer component={Paper} sx={{ mt: 1 }}>
-                <Table size="small">
-                  <TableHead>
-                    <TableRow>
-                      <TableCell>Date</TableCell>
-                      <TableCell>Type</TableCell>
-                      <TableCell>Description</TableCell>
-                      <TableCell align="right">Amount</TableCell>
-                      <TableCell>Order #</TableCell>
-                    </TableRow>
-                  </TableHead>
-                  <TableBody>
-                    {transactions.map((transaction) => (
-                      <TableRow key={transaction.id}>
-                        <TableCell>
-                          {new Date(transaction.created_at).toLocaleDateString()}
-                          <br />
-                          <Typography variant="caption" color="textSecondary">
-                            {new Date(transaction.created_at).toLocaleTimeString()}
-                          </Typography>
-                        </TableCell>
-                        <TableCell>
-                          <Box display="flex" alignItems="center" gap={1}>
-                            <span>{getTransactionTypeIcon(transaction.transaction_type)}</span>
-                            <Typography variant="body2">
-                              {transaction.transaction_type.replace('_', ' ')}
+              {/* Mobile Card View for Transactions */}
+              {isMobile ? (
+                <Box>
+                  {transactions.map((transaction) => (
+                    <Card key={transaction.id} sx={{ mb: 1.5, borderRadius: 2 }}>
+                      <CardContent sx={{ p: 1.5 }}>
+                        <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', mb: 1 }}>
+                          <Box sx={{ flex: 1 }}>
+                            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 0.5 }}>
+                              <span>{getTransactionTypeIcon(transaction.transaction_type)}</span>
+                              <Typography variant="subtitle2" fontWeight="bold">
+                                {transaction.transaction_type.replace('_', ' ')}
+                              </Typography>
+                            </Box>
+                            <Typography variant="body2" color="textSecondary" sx={{ mb: 1 }}>
+                              {transaction.description || 'No description'}
+                            </Typography>
+                            <Typography variant="caption" color="textSecondary">
+                              {new Date(transaction.created_at).toLocaleDateString()} • {new Date(transaction.created_at).toLocaleTimeString()}
                             </Typography>
                           </Box>
-                        </TableCell>
-                        <TableCell>
-                          <Typography variant="body2">
-                            {transaction.description || 'No description'}
-                          </Typography>
-                        </TableCell>
-                        <TableCell align="right">
-                          <Typography
-                            variant="body2"
-                            color={parseFloat(transaction.amount || 0) >= 0 ? 'success.main' : 'error.main'}
-                            fontWeight="bold"
-                          >
-                            {parseFloat(transaction.amount || 0) >= 0 ? '+' : ''}EGP {parseFloat(transaction.amount || 0).toFixed(2)}
-                          </Typography>
-                        </TableCell>
-                        <TableCell>
-                          {transaction.order_number ? (
-                            <Chip
-                              label={`#${transaction.order_number}`}
-                              size="small"
-                              variant="outlined"
-                            />
-                          ) : (
-                            <Typography variant="caption" color="textSecondary">
-                              No order
+                          
+                          <Box sx={{ textAlign: 'right' }}>
+                            <Typography
+                              variant="h6"
+                              color={parseFloat(transaction.amount || 0) >= 0 ? 'success.main' : 'error.main'}
+                              fontWeight="bold"
+                            >
+                              {parseFloat(transaction.amount || 0) >= 0 ? '+' : ''}EGP {parseFloat(transaction.amount || 0).toFixed(2)}
                             </Typography>
-                          )}
-                        </TableCell>
+                            {transaction.order_number && (
+                              <Chip
+                                label={`#${transaction.order_number}`}
+                                size="small"
+                                variant="outlined"
+                                sx={{ mt: 0.5 }}
+                              />
+                            )}
+                          </Box>
+                        </Box>
+                      </CardContent>
+                    </Card>
+                  ))}
+                </Box>
+              ) : (
+                /* Desktop Table View */
+                <TableContainer component={Paper} sx={{ mt: 1 }}>
+                  <Table size="small">
+                    <TableHead>
+                      <TableRow>
+                        <TableCell>Date</TableCell>
+                        <TableCell>Type</TableCell>
+                        <TableCell>Description</TableCell>
+                        <TableCell align="right">Amount</TableCell>
+                        <TableCell>Order #</TableCell>
                       </TableRow>
-                    ))}
-                  </TableBody>
-                </Table>
-              </TableContainer>
+                    </TableHead>
+                    <TableBody>
+                      {transactions.map((transaction) => (
+                        <TableRow key={transaction.id}>
+                          <TableCell>
+                            {new Date(transaction.created_at).toLocaleDateString()}
+                            <br />
+                            <Typography variant="caption" color="textSecondary">
+                              {new Date(transaction.created_at).toLocaleTimeString()}
+                            </Typography>
+                          </TableCell>
+                          <TableCell>
+                            <Box display="flex" alignItems="center" gap={1}>
+                              <span>{getTransactionTypeIcon(transaction.transaction_type)}</span>
+                              <Typography variant="body2">
+                                {transaction.transaction_type.replace('_', ' ')}
+                              </Typography>
+                            </Box>
+                          </TableCell>
+                          <TableCell>
+                            <Typography variant="body2">
+                              {transaction.description || 'No description'}
+                            </Typography>
+                          </TableCell>
+                          <TableCell align="right">
+                            <Typography
+                              variant="body2"
+                              color={parseFloat(transaction.amount || 0) >= 0 ? 'success.main' : 'error.main'}
+                              fontWeight="bold"
+                            >
+                              {parseFloat(transaction.amount || 0) >= 0 ? '+' : ''}EGP {parseFloat(transaction.amount || 0).toFixed(2)}
+                            </Typography>
+                          </TableCell>
+                          <TableCell>
+                            {transaction.order_number ? (
+                              <Chip
+                                label={`#${transaction.order_number}`}
+                                size="small"
+                                variant="outlined"
+                              />
+                            ) : (
+                              <Typography variant="caption" color="textSecondary">
+                                No order
+                              </Typography>
+                            )}
+                          </TableCell>
+                        </TableRow>
+                      ))}
+                    </TableBody>
+                  </Table>
+                </TableContainer>
+              )}
 
               {transactionsPagination.totalPages > 1 && (
                 <Box display="flex" justifyContent="center" mt={2}>
@@ -718,6 +862,7 @@ const CreditReport = ({
                     page={transactionsPage}
                     onChange={handleTransactionsPageChange}
                     color="primary"
+                    size={isSmallMobile ? "small" : "medium"}
                   />
                 </Box>
               )}
@@ -730,9 +875,11 @@ const CreditReport = ({
             </>
           )}
         </DialogContent>
-        <DialogActions>
-          <Button onClick={closeTransactionsDialog}>Close</Button>
-        </DialogActions>
+        {!isSmallMobile && (
+          <DialogActions sx={{ p: 2 }}>
+            <Button onClick={closeTransactionsDialog}>Close</Button>
+          </DialogActions>
+        )}
       </Dialog>
     </Box>
   );

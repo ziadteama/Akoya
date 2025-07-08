@@ -12,14 +12,30 @@ import {
   Box,
   Typography,
   Chip,
-  Button
+  Button,
+  Card,
+  CardContent,
+  CardActions,
+  useMediaQuery,
+  useTheme,
+  Stack,
+  Divider
 } from '@mui/material';
 import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
 import ExpandLessIcon from '@mui/icons-material/ExpandLess';
 import PrintIcon from '@mui/icons-material/Print';
+import PersonIcon from '@mui/icons-material/Person';
+import ReceiptIcon from '@mui/icons-material/Receipt';
+import RestaurantIcon from '@mui/icons-material/Restaurant';
+import LocalActivityIcon from '@mui/icons-material/LocalActivity';
+import PaymentIcon from '@mui/icons-material/Payment';
 import { notify } from '../utils/toast';
 
 const OrdersTable = ({ data }) => {
+  const theme = useTheme();
+  const isMobile = useMediaQuery(theme.breakpoints.down('md'));
+  const isSmallMobile = useMediaQuery(theme.breakpoints.down('sm'));
+
   const [expandedRows, setExpandedRows] = useState({});
 
   const toggleRow = (orderId) => {
@@ -292,7 +308,7 @@ const OrdersTable = ({ data }) => {
     notify.success(`📄 Receipt for Order #${order.order_id} sent to printer!`);
   };
 
-  // Original formatting functions
+  // Helper formatting functions
   const formatPaymentMethods = (payments) => {
     if (!Array.isArray(payments) || payments.length === 0) return 'N/A';
     
@@ -326,10 +342,232 @@ const OrdersTable = ({ data }) => {
     }).join(', ');
   };
 
-  // Original table UI
+  // Get ticket and meal counts
+  const getTicketCount = (tickets) => {
+    if (!Array.isArray(tickets)) return 0;
+    return tickets.reduce((sum, ticket) => sum + (Number(ticket.quantity) || 0), 0);
+  };
+
+  const getMealCount = (meals) => {
+    if (!Array.isArray(meals)) return 0;
+    return meals.reduce((sum, meal) => sum + (Number(meal.quantity) || 0), 0);
+  };
+
+  // Responsive rendering
+  if (isMobile) {
+    // Mobile Card View - Fixed to show all orders
+    return (
+      <Box sx={{ 
+        height: '100%',
+        overflow: 'auto',
+        p: 1
+      }}>
+        <Stack spacing={2}>
+          {data && data.length > 0 ? data.map((order) => {
+            const orderDate = new Date(order.created_at);
+            const ticketCount = getTicketCount(order.tickets);
+            const mealCount = getMealCount(order.meals);
+            
+            return (
+              <Card key={order.order_id} sx={{ 
+                borderRadius: 2,
+                boxShadow: '0 2px 8px rgba(0,0,0,0.1)',
+                overflow: 'hidden'
+              }}>
+                <CardContent sx={{ p: { xs: 1.5, sm: 2 } }}>
+                  {/* Order Header */}
+                  <Box sx={{ 
+                    display: 'flex', 
+                    justifyContent: 'space-between', 
+                    alignItems: 'flex-start',
+                    mb: 1.5 
+                  }}>
+                    <Box sx={{ flex: 1 }}>
+                      <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 0.5 }}>
+                        <ReceiptIcon color="primary" fontSize="small" />
+                        <Typography variant="subtitle1" fontWeight="bold">
+                          Order #{order.order_id}
+                        </Typography>
+                      </Box>
+                      <Typography variant="body2" color="text.secondary">
+                        {orderDate.toLocaleDateString()}
+                      </Typography>
+                      <Typography variant="caption" color="text.secondary">
+                        {orderDate.toLocaleTimeString()}
+                      </Typography>
+                    </Box>
+                    
+                    <Box sx={{ textAlign: 'right' }}>
+                      <Typography variant="h6" fontWeight="bold" color="success.main">
+                        EGP {Number(order.total_amount || 0).toFixed(2)}
+                      </Typography>
+                    </Box>
+                  </Box>
+
+                  {/* Cashier Info */}
+                  <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 1.5 }}>
+                    <PersonIcon fontSize="small" color="action" />
+                    <Typography variant="body2">
+                      {order.user_name || 'Unknown'}
+                    </Typography>
+                  </Box>
+
+                  {/* Items Summary */}
+                  <Box sx={{ mb: 2 }}>
+                    <Stack direction="row" spacing={1} flexWrap="wrap">
+                      {ticketCount > 0 && (
+                        <Chip 
+                          icon={<LocalActivityIcon fontSize="small" />}
+                          label={`${ticketCount} ticket${ticketCount !== 1 ? 's' : ''}`}
+                          size="small"
+                          color="primary"
+                          variant="outlined"
+                        />
+                      )}
+                      {mealCount > 0 && (
+                        <Chip 
+                          icon={<RestaurantIcon fontSize="small" />}
+                          label={`${mealCount} meal${mealCount !== 1 ? 's' : ''}`}
+                          size="small"
+                          color="secondary"
+                          variant="outlined"
+                        />
+                      )}
+                      {order.payments && order.payments.length > 0 && (
+                        <Chip 
+                          icon={<PaymentIcon fontSize="small" />}
+                          label={`${order.payments.length} payment${order.payments.length !== 1 ? 's' : ''}`}
+                          size="small"
+                          color="default"
+                          variant="outlined"
+                        />
+                      )}
+                    </Stack>
+                  </Box>
+
+                  {/* Expandable Details */}
+                  <Collapse in={expandedRows[order.order_id]} timeout="auto" unmountOnExit>
+                    <Box sx={{ 
+                      p: 1.5, 
+                      backgroundColor: '#f9f9f9', 
+                      borderRadius: 1,
+                      mb: 2
+                    }}>
+                      {order.description && (
+                        <Box sx={{ mb: 2 }}>
+                          <Typography variant="subtitle2" sx={{ fontWeight: 'bold', color: '#666', mb: 1 }}>
+                            Description:
+                          </Typography>
+                          <Typography variant="body2" sx={{ 
+                            backgroundColor: '#fff', 
+                            padding: 1, 
+                            borderRadius: 1, 
+                            border: '1px solid #ddd',
+                            fontStyle: 'italic'
+                          }}>
+                            {order.description}
+                          </Typography>
+                        </Box>
+                      )}
+                      
+                      <Stack spacing={2}>
+                        <Box>
+                          <Typography variant="subtitle2" sx={{ fontWeight: 'bold', color: '#666', mb: 0.5 }}>
+                            Tickets:
+                          </Typography>
+                          <Typography variant="body2" sx={{ fontSize: '0.875rem' }}>
+                            {formatTickets(order.tickets)}
+                          </Typography>
+                        </Box>
+                        
+                        <Box>
+                          <Typography variant="subtitle2" sx={{ fontWeight: 'bold', color: '#666', mb: 0.5 }}>
+                            Meals:
+                          </Typography>
+                          <Typography variant="body2" sx={{ fontSize: '0.875rem' }}>
+                            {formatMeals(order.meals)}
+                          </Typography>
+                        </Box>
+                        
+                        <Box>
+                          <Typography variant="subtitle2" sx={{ fontWeight: 'bold', color: '#666', mb: 0.5 }}>
+                            Payment Methods:
+                          </Typography>
+                          <Typography variant="body2" sx={{ fontSize: '0.875rem' }}>
+                            {formatPaymentMethods(order.payments)}
+                          </Typography>
+                        </Box>
+                        
+                        <Box>
+                          <Typography variant="subtitle2" sx={{ fontWeight: 'bold', color: '#666', mb: 0.5 }}>
+                            Gross Total:
+                          </Typography>
+                          <Typography variant="body2" sx={{ fontWeight: 'bold', color: '#2e7d32', fontSize: '0.875rem' }}>
+                            EGP {calculateGrossTotal(order).toFixed(2)}
+                          </Typography>
+                        </Box>
+                      </Stack>
+                    </Box>
+                  </Collapse>
+                </CardContent>
+
+                {/* Action Buttons */}
+                <CardActions sx={{ 
+                  px: { xs: 1.5, sm: 2 }, 
+                  pb: { xs: 1.5, sm: 2 },
+                  pt: 0,
+                  justifyContent: 'space-between'
+                }}>
+                  <Button
+                    size="small"
+                    onClick={() => toggleRow(order.order_id)}
+                    endIcon={expandedRows[order.order_id] ? <ExpandLessIcon /> : <ExpandMoreIcon />}
+                    sx={{ textTransform: 'none' }}
+                  >
+                    {expandedRows[order.order_id] ? 'Hide Details' : 'Show Details'}
+                  </Button>
+                  
+                  <Button
+                    variant="outlined"
+                    size="small"
+                    startIcon={<PrintIcon fontSize="small" />}
+                    onClick={() => printOrderReceipt(order)}
+                    sx={{
+                      borderColor: "#00AEEF",
+                      color: "#00AEEF",
+                      '&:hover': {
+                        borderColor: "#007EA7",
+                        backgroundColor: "#E0F7FF",
+                      }
+                    }}
+                  >
+                    {isSmallMobile ? 'Print' : 'Print Receipt'}
+                  </Button>
+                </CardActions>
+              </Card>
+            );
+          }) : (
+            <Box sx={{ 
+              display: 'flex', 
+              justifyContent: 'center', 
+              alignItems: 'center', 
+              height: '200px',
+              textAlign: 'center'
+            }}>
+              <Typography color="text.secondary">
+                No orders to display
+              </Typography>
+            </Box>
+          )}
+        </Stack>
+      </Box>
+    );
+  }
+
+  // Desktop Table View (unchanged)
   return (
-    <TableContainer component={Paper}>
-      <Table>
+    <TableContainer component={Paper} sx={{ height: '100%', overflow: 'auto' }}>
+      <Table stickyHeader>
         <TableHead>
           <TableRow sx={{ backgroundColor: '#f5f5f5' }}>
             <TableCell />
@@ -341,7 +579,7 @@ const OrdersTable = ({ data }) => {
           </TableRow>
         </TableHead>
         <TableBody>
-          {data.map((order) => (
+          {data && data.length > 0 ? data.map((order) => (
             <React.Fragment key={order.order_id}>
               <TableRow hover>
                 <TableCell>
@@ -456,7 +694,15 @@ const OrdersTable = ({ data }) => {
                 </TableCell>
               </TableRow>
             </React.Fragment>
-          ))}
+          )) : (
+            <TableRow>
+              <TableCell colSpan={6} sx={{ textAlign: 'center', py: 4 }}>
+                <Typography color="text.secondary">
+                  No orders to display
+                </Typography>
+              </TableCell>
+            </TableRow>
+          )}
         </TableBody>
       </Table>
     </TableContainer>
