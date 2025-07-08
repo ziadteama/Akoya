@@ -68,42 +68,56 @@ const CashierSellingPanel = () => {
     
     const fetchTicketTypes = async () => {
       try {
-        const { data } = await axios.get(`${baseUrl}/api/tickets/ticket-types?archived=false`);
-        
-        // Filter out tickets with invalid prices (0, null, undefined, or empty)
-        const validTypes = data.filter(type => {
-          const price = Number(type.price);
-          return price > 1; // Only include tickets with price greater than 0
-        });
-        
-        // Ensure all prices are valid numbers and translate categories
-        const typesWithValidPrices = validTypes.map(type => ({
-          ...type,
-          price: Number(type.price),
-          // Keep original category for backend compatibility
-          originalCategory: type.category,
-          // Add translated category for display
-          category: translateCategory(type.category)
-        }));
-        
-        console.log('Valid ticket types with prices > 0:', 
-          typesWithValidPrices.slice(0, 3).map(t => ({ 
-            id: t.id, 
-            originalCategory: t.originalCategory,
-            category: t.category, 
-            subcategory: t.subcategory,
-            price: t.price 
-          }))
-        );
-        
-        setTypes(typesWithValidPrices);
-      } catch (error) {
-        console.error("Failed to fetch ticket types:", error);
-        notify.error("Failed to load ticket types");
+      // Get user role from localStorage or context
+      const userRole = localStorage.getItem('userRole') || 'cashier';
+      
+      // Build query parameters based on role
+      let queryParams = '';
+      if (userRole === 'cashier') {
+        // Accountants can see all tickets (archived and unarchived)
+        queryParams = '?archived=false'; // No archived filter - fetch all
+      } else {
+        // Cashiers only see unarchived tickets
+        queryParams = '';
       }
-    };
-    
-    fetchTicketTypes();
+      
+      const { data } = await axios.get(`${baseUrl}/api/tickets/ticket-types${queryParams}`);
+      
+      // Filter out tickets with invalid prices (0, null, undefined, or empty)
+      const validTypes = data.filter(type => {
+        const price = Number(type.price);
+        return price > 1; // Only include tickets with price greater than 0
+      });
+      
+      // Ensure all prices are valid numbers and translate categories
+      const typesWithValidPrices = validTypes.map(type => ({
+        ...type,
+        price: Number(type.price),
+        // Keep original category for backend compatibility
+        originalCategory: type.category,
+        // Add translated category for display
+        category: translateCategory(type.category)
+      }));
+      
+      console.log(`Fetched ticket types for role "${userRole}":`, 
+        typesWithValidPrices.slice(0, 3).map(t => ({ 
+          id: t.id, 
+          originalCategory: t.originalCategory,
+          category: t.category, 
+          subcategory: t.subcategory,
+          price: t.price,
+          archived: t.archived
+        }))
+      );
+      
+      setTypes(typesWithValidPrices);
+    } catch (error) {
+      console.error("Failed to fetch ticket types:", error);
+      notify.error("Failed to load ticket types");
+    }
+  };
+  
+  fetchTicketTypes();
   }, [baseUrl]);
 
   const handleSelectCategory = (category) => {

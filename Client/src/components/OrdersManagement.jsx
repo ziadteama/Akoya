@@ -177,7 +177,6 @@ const OrdersManagement = () => {
       if (!token) return;
       
       const response = await axios.get(`${baseUrl}/api/tickets/ticket-types`, {
-        params: { archived: false },
         headers: { Authorization: `Bearer ${token}` }
       });
       
@@ -197,7 +196,6 @@ const OrdersManagement = () => {
       if (!token) return;
       
       const response = await axios.get(`${baseUrl}/api/meals`, {
-        params: { archived: false },
         headers: { Authorization: `Bearer ${token}` }
       });
       

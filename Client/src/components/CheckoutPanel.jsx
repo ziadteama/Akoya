@@ -57,7 +57,16 @@ const CheckoutPanel = ({ ticketCounts, types, onCheckout, onClear, mode = "new",
     
     const fetchMeals = async () => {
       try {
-        const response = await axios.get(`${baseUrl}/api/meals?archived=false`);
+      const userRole = localStorage.getItem('userRole') || 'cashier';
+        let queryParams = '';
+      if (userRole === 'cashier') {
+        // Accountants can see all tickets (archived and unarchived)
+        queryParams = '?archived=false'; // No archived filter - fetch all
+      } else {
+        queryParams = '';
+      }
+      
+        const response = await axios.get(`${baseUrl}/api/meals${queryParams}`);
         console.log("Meals data fetched:", response.data.slice(0, 2));
         setMeals(response.data.map(meal => ({
           ...meal,
