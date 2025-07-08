@@ -1858,100 +1858,100 @@ const OrdersManagement = () => {
                       <TableCell align="center">Actions</TableCell>
                     </TableRow>
                   </TableHead>
-                  <TableBody>
-                    {filteredOrders
-                      .slice(page * rowsPerPage, page * rowsPerPage + rowsPerPage)
-                      .map((order) => {
-                        const orderDate = new Date(order.created_at);
-                        
-                        const ticketCount = order.tickets ? 
-                          order.tickets.reduce((sum, ticket) => sum + (ticket.quantity || 0), 0) : 0;
-                        
-                        const mealCount = order.meals ? 
-                          order.meals.reduce((sum, meal) => sum + (meal.quantity || 0), 0) : 0;
-                          
-                        return (
-                          <TableRow 
-                            hover
-                            key={order.order_id}
-                            sx={{ '&:hover': { cursor: 'pointer' } }}
-                          >
-                            <TableCell>#{order.order_id}</TableCell>
-                            <TableCell>
-                              <Typography variant="body2">
-                                {orderDate.toLocaleDateString()}
-                              </Typography>
-                              <Typography variant="caption" color="text.secondary">
-                                {orderDate.toLocaleTimeString()}
-                              </Typography>
-                            </TableCell>
-                            <TableCell>
-                              <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                                <PersonIcon fontSize="small" color="action" />
-                                <Typography>{order.user_name || 'Unknown'}</Typography>
-                              </Box>
-                            </TableCell>
-                            <TableCell>
-                              {ticketCount > 0 && (
-                                <Chip 
-                                  icon={<LocalActivityIcon fontSize="small" />}
-                                  label={`${ticketCount} ticket${ticketCount !== 1 ? 's' : ''}`}
-                                  size="small"
-                                  color="primary"
-                                  variant="outlined"
-                                  sx={{ mr: 1, mb: 0.5 }}
-                               />
-                              )}
-                              {mealCount > 0 && (
-                                <Chip 
-                                  icon={<RestaurantIcon fontSize="small" />}
-                                  label={`${mealCount} meal${mealCount !== 1 ? 's' : ''}`}
-                                  size="small"
-                                  color="secondary"
-                                  variant="outlined"
-                                  sx={{ mb: 0.5 }}
-                                />
-                              )}
-                            </TableCell>
-                            <TableCell>
-                              {order.payments && order.payments.map((payment, index) => (
-                                <Chip 
-                                  key={index}
-                                  label={`${formatPaymentMethod(payment.method)}: ${formatCurrency(payment.amount)}`}
-                                  size="small"
-                                  color={getPaymentMethodColor(payment.method)}
-                                  variant="outlined"
-                                  sx={{ mr: 0.5, mb: 0.5 }}
-                                />
-                              ))}
-                            </TableCell>
-                            <TableCell align="right">
-                              <Typography fontWeight="bold">
-                                {formatCurrency(order.total_amount)}
-                              </Typography>
-                            </TableCell>
-                            <TableCell align="center">
-                              <Box sx={{ display: 'flex', gap: 1, justifyContent: 'center' }}>
-                                <IconButton
-                                  color="primary"
-                                  onClick={() => handleOpenEditDialog(order)}
-                                  title="Edit Order"
-                                >
-                                  <EditIcon />
-                                </IconButton>
-                                <IconButton
-                                  color="error"
-                                  onClick={() => handleDeleteOrder(order)}
-                                  title="Delete Order"
-                                >
-                                  <DeleteIcon />
-                                </IconButton>
-                              </Box>
-                            </TableCell>
-                          </TableRow>
-                        );
-                      })}
-                  </TableBody>
+                 <TableBody>
+  {filteredOrders
+    .slice(page * rowsPerPage, page * rowsPerPage + rowsPerPage)
+    .map((order) => {
+      const orderDate = new Date(order.created_at);
+      
+      const ticketCount = order.tickets ? 
+        order.tickets.reduce((sum, ticket) => sum + (ticket.quantity || 0), 0) : 0;
+      
+      const mealCount = order.meals ? 
+        order.meals.reduce((sum, meal) => sum + (meal.quantity || 0), 0) : 0;
+        
+      return (
+        <TableRow 
+          hover
+          key={order.order_id}
+          sx={{ '&:hover': { cursor: 'pointer' } }}
+        >
+          <TableCell>#{order.order_id}</TableCell>
+          <TableCell>
+            <Typography variant="body2">
+              {orderDate.toLocaleDateString()}
+            </Typography>
+            <Typography variant="caption" color="text.secondary">
+              {orderDate.toLocaleTimeString()}
+            </Typography>
+          </TableCell>
+          <TableCell>
+            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+              <PersonIcon fontSize="small" color="action" />
+              <Typography>{order.user_name || 'Unknown'}</Typography>
+            </Box>
+          </TableCell>
+          <TableCell>
+            {ticketCount > 0 && (
+              <Chip 
+                icon={<LocalActivityIcon fontSize="small" />}
+                label={`${ticketCount} ticket${ticketCount !== 1 ? 's' : ''}`}
+                size="small"
+                color="primary"
+                variant="outlined"
+                sx={{ mr: 1, mb: 0.5 }}
+              />
+            )}
+            {mealCount > 0 && (
+              <Chip 
+                icon={<RestaurantIcon fontSize="small" />}
+                label={`${mealCount} meal${mealCount !== 1 ? 's' : ''}`}
+                size="small"
+                color="secondary"
+                variant="outlined"
+                sx={{ mb: 0.5 }}
+              />
+            )}
+          </TableCell>
+          <TableCell>
+            {order.payments && order.payments.map((payment, index) => (
+              <Chip 
+                key={index}
+                label={`${formatPaymentMethod(payment.method)}: ${formatCurrency(payment.amount)}`}
+                size="small"
+                color={getPaymentMethodColor(payment.method)}
+                variant="outlined"
+                sx={{ mr: 0.5, mb: 0.5 }}
+              />
+            ))}
+          </TableCell>
+          <TableCell align="right">
+            <Typography fontWeight="bold">
+              {formatCurrency(order.total_amount)}
+            </Typography>
+          </TableCell>
+          <TableCell align="center">
+            <Box sx={{ display: 'flex', gap: 1, justifyContent: 'center' }}>
+              <IconButton
+                color="primary"
+                onClick={() => handleOpenEditDialog(order)}
+                title="Edit Order"
+              >
+                <EditIcon />
+              </IconButton>
+              <IconButton
+                color="error"
+                onClick={() => handleDeleteOrder(order)}
+                title="Delete Order"
+              >
+                <DeleteIcon />
+              </IconButton>
+            </Box>
+          </TableCell>
+        </TableRow>
+      );
+    })} {/* This closing parenthesis and brace were missing */}
+</TableBody>
                 </Table>
               </TableContainer>
               <TablePagination
@@ -1966,230 +1966,231 @@ const OrdersManagement = () => {
             </Paper>
           )}
         </>
+      )}
 
-        {/* Compact Mobile Edit Dialog */}
-        <Dialog 
-          open={editDialogOpen} 
-          onClose={handleCloseEditDialog}
-          fullWidth
-          maxWidth="lg"
-          fullScreen={isSmallMobile}
-          PaperProps={{
-            sx: isMobile ? {
-              height: '100vh',
-              maxHeight: '100vh',
-              margin: 0,
-              borderRadius: 0
-            } : {}
-          }}
-        >
-          <DialogTitle sx={{ 
-            p: { xs: 1, sm: 2 },
-            fontSize: { xs: '1rem', sm: '1.5rem' }
-          }}>
-            <Stack 
-              direction="row"
-              justifyContent="space-between" 
-              alignItems="center"
-              spacing={1}
-            >
-              <Typography variant={isMobile ? "subtitle1" : "h5"} noWrap>
-                Edit #{selectedOrder?.order_id}
-              </Typography>
-              <Chip 
-                label={formatCurrency(editableOrder?.total_amount || 0)}
-                color="primary"
-                size="small"
-              />
-            </Stack>
-            
-            {selectedOrder && (
-              <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mt: 0.5 }}>
-                {new Date(selectedOrder.created_at).toLocaleString()} • {selectedOrder.user_name}
-              </Typography>
-            )}
-          </DialogTitle>
-
-          <Tabs 
-            value={editTab} 
-            onChange={handleEditTabChange} 
-            sx={{ 
-              px: { xs: 1, sm: 2 }, 
-              borderBottom: 1, 
-              borderColor: 'divider',
-              minHeight: 'auto'
-            }}
-            variant="fullWidth"
+      {/* Compact Mobile Edit Dialog */}
+      <Dialog 
+        open={editDialogOpen} 
+        onClose={handleCloseEditDialog}
+        fullWidth
+        maxWidth="lg"
+        fullScreen={isSmallMobile}
+        PaperProps={{
+          sx: isMobile ? {
+            height: '100vh',
+            maxHeight: '100vh',
+            margin: 0,
+            borderRadius: 0
+          } : {}
+        }}
+      >
+        <DialogTitle sx={{ 
+          p: { xs: 1, sm: 2 },
+          fontSize: { xs: '1rem', sm: '1.5rem' }
+        }}>
+          <Stack 
+            direction="row"
+            justifyContent="space-between" 
+            alignItems="center"
+            spacing={1}
           >
-            <Tab 
-              icon={<LocalActivityIcon fontSize="small" />} 
-              iconPosition="start"
-              label="Tickets"
-              sx={{ 
-                fontSize: '0.75rem',
-                minHeight: 'auto',
-                py: 1
-              }}
-            />
-            <Tab 
-              icon={<RestaurantIcon fontSize="small" />} 
-              iconPosition="start"
-              label="Meals"
-              sx={{ 
-                fontSize: '0.75rem',
-                minHeight: 'auto',
-                py: 1
-              }}
-            />
-            <Tab 
-              icon={<PaymentIcon fontSize="small" />} 
-              iconPosition="start"
-              label="Payment"
-              sx={{ 
-                fontSize: '0.75rem',
-                minHeight: 'auto',
-                py: 1
-              }}
-            />
-          </Tabs>
-          
-          <DialogContent dividers sx={{ 
-            p: { xs: 1, sm: 2 },
-            height: isSmallMobile ? 'calc(100vh - 180px)' : 'auto'
-          }}>
-            {renderEditTabContent()}
-          </DialogContent>
-          
-          <DialogActions sx={{ 
-            p: { xs: 1, sm: 2 },
-            gap: 1
-          }}>
-            <Button 
-              onClick={handleCloseEditDialog}
+            <Typography variant={isMobile ? "subtitle1" : "h5"} noWrap>
+              Edit #{selectedOrder?.order_id}
+            </Typography>
+            <Chip 
+              label={formatCurrency(editableOrder?.total_amount || 0)}
+              color="primary"
               size="small"
-              sx={{ flex: 1 }}
-            >
-              Cancel
-            </Button>
-            <Button 
-              onClick={saveOrderChanges} 
-              variant="contained"
-              startIcon={<SaveIcon fontSize="small" />}
-              disabled={
-                loading || 
-                !editableOrder || 
-                // Disable if payment difference exists
-                Math.abs(
-                  (editableOrder?.payments?.reduce((sum, p) => sum + (parseFloat(p.amount) || 0), 0) || 0) - 
-                  (parseFloat(editableOrder?.total_amount) || 0)
-                ) >= 0.01 ||
-                // Disable if no changes made
-                !(
-                  (editableOrder?.addedTickets && editableOrder.addedTickets.length > 0) ||
-                  (editableOrder?.removedTickets && editableOrder.removedTickets.length > 0) ||
-                  (editableOrder?.addedMeals && editableOrder.addedMeals.length > 0) ||
-                  (editableOrder?.removedMeals && editableOrder.removedMeals.length > 0) ||
-                  (editableOrder?.payments && editableOrder?.originalPayments && 
-                   JSON.stringify(editableOrder.payments.map(p => ({
-                     method: p.method,
-                     amount: parseFloat(p.amount).toFixed(2)
-                   }))) !== JSON.stringify((editableOrder.originalPayments || []).map(p => ({
-                     method: p.method,
-                     amount: parseFloat(p.amount).toFixed(2)
-                   }))))
-                )
-              }
-              size="small"
-              sx={{ flex: 2 }}
-            >
-              {loading ? 'Saving...' : 'Save'}
-            </Button>
-          </DialogActions>
-        </Dialog>
+            />
+          </Stack>
+          
+          {selectedOrder && (
+            <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mt: 0.5 }}>
+              {new Date(selectedOrder.created_at).toLocaleString()} • {selectedOrder.user_name}
+            </Typography>
+          )}
+        </DialogTitle>
 
-        {/* Keep existing Delete Dialog but make it more compact */}
-        <Dialog
-          open={deleteDialogOpen}
-          onClose={() => setDeleteDialogOpen(false)}
-          maxWidth="sm"
-          fullWidth
-          fullScreen={isSmallMobile}
+        <Tabs 
+          value={editTab} 
+          onChange={handleEditTabChange} 
+          sx={{ 
+            px: { xs: 1, sm: 2 }, 
+            borderBottom: 1, 
+            borderColor: 'divider',
+            minHeight: 'auto'
+          }}
+          variant="fullWidth"
         >
-          <DialogTitle sx={{ 
-            color: 'error.main', 
-            display: 'flex', 
-            alignItems: 'center', 
-            gap: 1,
-            fontSize: { xs: '1rem', sm: '1.5rem' },
-            p: { xs: 1.5, sm: 2 }
-          }}>
-            <DeleteIcon />
-            Delete Order
-          </DialogTitle>
-          <DialogContent sx={{ p: { xs: 1.5, sm: 2 } }}>
-            {orderToDelete && (
-              <Box>
-                <Typography gutterBottom variant="body2">
-                  Are you sure you want to delete <strong>Order #{orderToDelete.order_id}</strong>?
+          <Tab 
+            icon={<LocalActivityIcon fontSize="small" />} 
+            iconPosition="start"
+            label="Tickets"
+            sx={{ 
+              fontSize: '0.75rem',
+              minHeight: 'auto',
+              py: 1
+            }}
+          />
+          <Tab 
+            icon={<RestaurantIcon fontSize="small" />} 
+            iconPosition="start"
+            label="Meals"
+            sx={{ 
+              fontSize: '0.75rem',
+              minHeight: 'auto',
+              py: 1
+            }}
+          />
+          <Tab 
+            icon={<PaymentIcon fontSize="small" />} 
+            iconPosition="start"
+            label="Payment"
+            sx={{ 
+              fontSize: '0.75rem',
+              minHeight: 'auto',
+              py: 1
+            }}
+          />
+        </Tabs>
+        
+        <DialogContent dividers sx={{ 
+          p: { xs: 1, sm: 2 },
+          height: isSmallMobile ? 'calc(100vh - 180px)' : 'auto'
+        }}>
+          {renderEditTabContent()}
+        </DialogContent>
+        
+        <DialogActions sx={{ 
+          p: { xs: 1, sm: 2 },
+          gap: 1
+        }}>
+          <Button 
+            onClick={handleCloseEditDialog}
+            size="small"
+            sx={{ flex: 1 }}
+          >
+            Cancel
+          </Button>
+          <Button 
+            onClick={saveOrderChanges} 
+            variant="contained"
+            startIcon={<SaveIcon fontSize="small" />}
+            disabled={
+              loading || 
+              !editableOrder || 
+              // Disable if payment difference exists
+              Math.abs(
+                (editableOrder?.payments?.reduce((sum, p) => sum + (parseFloat(p.amount) || 0), 0) || 0) - 
+                (parseFloat(editableOrder?.total_amount) || 0)
+              ) >= 0.01 ||
+              // Disable if no changes made
+              !(
+                (editableOrder?.addedTickets && editableOrder.addedTickets.length > 0) ||
+                (editableOrder?.removedTickets && editableOrder.removedTickets.length > 0) ||
+                (editableOrder?.addedMeals && editableOrder.addedMeals.length > 0) ||
+                (editableOrder?.removedMeals && editableOrder.removedMeals.length > 0) ||
+                (editableOrder?.payments && editableOrder?.originalPayments && 
+                 JSON.stringify(editableOrder.payments.map(p => ({
+                   method: p.method,
+                   amount: parseFloat(p.amount).toFixed(2)
+                 }))) !== JSON.stringify((editableOrder.originalPayments || []).map(p => ({
+                   method: p.method,
+                   amount: parseFloat(p.amount).toFixed(2)
+                 }))))
+              )
+            }
+            size="small"
+            sx={{ flex: 2 }}
+          >
+            {loading ? 'Saving...' : 'Save'}
+          </Button>
+        </DialogActions>
+      </Dialog>
+
+      {/* Keep existing Delete Dialog but make it more compact */}
+      <Dialog
+        open={deleteDialogOpen}
+        onClose={() => setDeleteDialogOpen(false)}
+        maxWidth="sm"
+        fullWidth
+        fullScreen={isSmallMobile}
+      >
+        <DialogTitle sx={{ 
+          color: 'error.main', 
+          display: 'flex', 
+          alignItems: 'center', 
+          gap: 1,
+          fontSize: { xs: '1rem', sm: '1.5rem' },
+          p: { xs: 1.5, sm: 2 }
+        }}>
+          <DeleteIcon />
+          Delete Order
+        </DialogTitle>
+        <DialogContent sx={{ p: { xs: 1.5, sm: 2 } }}>
+          {orderToDelete && (
+            <Box>
+              <Typography gutterBottom variant="body2">
+                Are you sure you want to delete <strong>Order #{orderToDelete.order_id}</strong>?
+              </Typography>
+              
+              <Box sx={{ 
+                mt: 1, 
+                p: 1.5, 
+                bgcolor: 'grey.100', 
+                borderRadius: 1 
+              }}>
+                <Typography variant="caption" color="text.secondary">
+                  <strong>Order Details:</strong>
                 </Typography>
-                
-                <Box sx={{ 
-                  mt: 1, 
-                  p: 1.5, 
-                  bgcolor: 'grey.100', 
-                  borderRadius: 1 
-                }}>
-                  <Typography variant="caption" color="text.secondary">
-                    <strong>Order Details:</strong>
-                  </Typography>
-                  <Typography variant="caption" display="block">
-                    • Created: {new Date(orderToDelete.created_at).toLocaleString()}
-                  </Typography>
-                  <Typography variant="caption" display="block">
-                    • Cashier: {orderToDelete.user_name}
-                  </Typography>
-                  <Typography variant="caption" display="block">
-                    • Total: {formatCurrency(orderToDelete.total_amount)}
-                  </Typography>
-                </Box>
-                
-                <Typography 
-                  variant="caption" 
-                  color="error" 
-                  sx={{ mt: 1, fontWeight: 'medium', display: 'block' }}
-                >
-                  ⚠️ This action cannot be undone.
+                <Typography variant="caption" display="block">
+                  • Created: {new Date(orderToDelete.created_at).toLocaleString()}
+                </Typography>
+                <Typography variant="caption" display="block">
+                  • Cashier: {orderToDelete.user_name}
+                </Typography>
+                <Typography variant="caption" display="block">
+                  • Total: {formatCurrency(orderToDelete.total_amount)}
                 </Typography>
               </Box>
-            )}
-          </DialogContent>
-          <DialogActions sx={{ 
-            p: { xs: 1.5, sm: 2 },
-            gap: 1
-          }}>
-            <Button 
-              onClick={() => setDeleteDialogOpen(false)}
-              size="small"
-              sx={{ flex: 1 }}
-            >
-              Cancel
-            </Button>
-            <Button 
-              onClick={confirmDeleteOrder}
-              color="error"
-              variant="contained"
-              startIcon={<DeleteIcon fontSize="small" />}
-              disabled={loading}
-              size="small"
-              sx={{ flex: 1 }}
-            >
-              Delete
-            </Button>
-          </DialogActions>
-        </Dialog>
-      </Box>
-    </LocalizationProvider>
-  );
+              
+              <Typography 
+                variant="caption" 
+                color="error" 
+                sx={{ mt: 1, fontWeight: 'medium', display: 'block' }}
+              >
+                ⚠️ This action cannot be undone.
+              </Typography>
+            </Box>
+          )}
+        </DialogContent>
+        <DialogActions sx={{ 
+          p: { xs: 1.5, sm: 2 },
+          gap: 1
+        }}>
+          <Button 
+            onClick={() => setDeleteDialogOpen(false)}
+            size="small"
+            sx={{ flex: 1 }}
+          >
+            Cancel
+          </Button>
+          <Button 
+            onClick={confirmDeleteOrder}
+            color="error"
+            variant="contained"
+            startIcon={<DeleteIcon fontSize="small" />}
+            disabled={loading}
+            size="small"
+            sx={{ flex: 1 }}
+          >
+            Delete
+          </Button>
+        </DialogActions>
+      </Dialog>
+        </Box>
+      </LocalizationProvider>
+    );
 };
 
 export default OrdersManagement;
