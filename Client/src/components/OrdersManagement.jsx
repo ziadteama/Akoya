@@ -1262,84 +1262,177 @@ const OrdersManagement = () => {
     switch (editTab) {
       case 0: // Tickets Tab
         return (
-          <Box>
-            <Typography variant={isMobile ? "body1" : "h6"} gutterBottom>
+          <Box sx={{ height: '100%', display: 'flex', flexDirection: 'column' }}>
+            <Typography 
+              variant={isMobile ? "subtitle2" : "h6"} 
+              gutterBottom
+              sx={{ fontSize: { xs: '0.9rem', sm: '1rem', md: '1.1rem' } }}
+            >
               Current Tickets
             </Typography>
             {editableOrder.tickets.length === 0 ? (
-              <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
+              <Typography 
+                variant="body2" 
+                color="text.secondary" 
+                sx={{ 
+                  mb: 2,
+                  fontSize: { xs: '0.8rem', sm: '0.875rem' }
+                }}
+              >
                 No tickets in this order
               </Typography>
             ) : (
-              <List sx={{ mb: 2, maxHeight: { xs: 200, sm: 300 }, overflow: 'auto' }}>
+              <Box sx={{ 
+                mb: 2, 
+                maxHeight: { xs: '30vh', sm: '35vh', md: '40vh' }, 
+                overflow: 'auto',
+                border: 1,
+                borderColor: 'divider',
+                borderRadius: 1
+              }}>
                 {editableOrder.tickets.map((ticket, index) => (
-                  <ListItem key={index} divider>
-                    <ListItemText
-                      primary={
-                        <Typography variant={isMobile ? "body2" : "body1"}>
-                          {ticket.category} - {ticket.subcategory}
-                        </Typography>
-                      }
-                      secondary={
-                        <Typography variant="caption" color="text.secondary">
-                          {formatCurrency(ticket.sold_price)} each
-                        </Typography>
-                      }
-                    />
-                    <ListItemSecondaryAction>
-                      <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                        <IconButton 
-                          size="small" 
-                          onClick={() => handleRemoveTicket(ticket.ticket_type_id)}
-                        >
-                          <RemoveIcon />
-                        </IconButton>
-                        <Typography variant="body2" sx={{ minWidth: 20, textAlign: 'center' }}>
-                          {ticket.quantity}
-                        </Typography>
-                        <IconButton 
-                          size="small" 
-                          onClick={() => handleAddTicket({
-                            id: ticket.ticket_type_id,
-                            category: ticket.category,
-                            subcategory: ticket.subcategory,
-                            price: ticket.sold_price
-                          })}
-                        >
-                          <AddIcon />
-                        </IconButton>
-                      </Box>
-                    </ListItemSecondaryAction>
-                  </ListItem>
+                  <Box
+                    key={index}
+                    sx={{
+                      p: { xs: 1, sm: 1.5 },
+                      borderBottom: index < editableOrder.tickets.length - 1 ? 1 : 0,
+                      borderColor: 'divider',
+                      display: 'flex',
+                      justifyContent: 'space-between',
+                      alignItems: 'center',
+                      gap: 1
+                    }}
+                  >
+                    <Box sx={{ minWidth: 0, flex: 1 }}>
+                      <Typography 
+                        variant={isMobile ? "body2" : "body1"}
+                        sx={{ 
+                          fontWeight: 'medium',
+                          fontSize: { xs: '0.8rem', sm: '0.875rem' }
+                        }}
+                        noWrap
+                      >
+                        {ticket.category} - {ticket.subcategory}
+                      </Typography>
+                      <Typography 
+                        variant="caption" 
+                        color="text.secondary"
+                        sx={{ fontSize: { xs: '0.7rem', sm: '0.75rem' } }}
+                      >
+                        {formatCurrency(ticket.sold_price)} each
+                      </Typography>
+                    </Box>
+                    <Box sx={{ 
+                      display: 'flex', 
+                      alignItems: 'center', 
+                      gap: { xs: 0.5, sm: 1 },
+                      flexShrink: 0
+                    }}>
+                      <IconButton 
+                        size="small" 
+                        onClick={() => handleRemoveTicket(ticket.ticket_type_id)}
+                        sx={{ p: { xs: 0.25, sm: 0.5 } }}
+                      >
+                        <RemoveIcon fontSize="small" />
+                      </IconButton>
+                      <Typography 
+                        variant="body2" 
+                        sx={{ 
+                          minWidth: { xs: 16, sm: 20 }, 
+                          textAlign: 'center',
+                          fontSize: { xs: '0.8rem', sm: '0.875rem' },
+                          fontWeight: 'bold'
+                        }}
+                      >
+                        {ticket.quantity}
+                      </Typography>
+                      <IconButton 
+                        size="small" 
+                        onClick={() => handleAddTicket({
+                          id: ticket.ticket_type_id,
+                          category: ticket.category,
+                          subcategory: ticket.subcategory,
+                          price: ticket.sold_price
+                        })}
+                        sx={{ p: { xs: 0.25, sm: 0.5 } }}
+                      >
+                        <AddIcon fontSize="small" />
+                      </IconButton>
+                    </Box>
+                  </Box>
                 ))}
-              </List>
+              </Box>
             )}
 
-            <Divider sx={{ my: 2 }} />
+            <Divider sx={{ my: { xs: 1, sm: 2 } }} />
 
-            <Typography variant={isMobile ? "body1" : "h6"} gutterBottom>
+            <Typography 
+              variant={isMobile ? "subtitle2" : "h6"} 
+              gutterBottom
+              sx={{ fontSize: { xs: '0.9rem', sm: '1rem', md: '1.1rem' } }}
+            >
               Add Tickets
             </Typography>
-            <Box sx={{ maxHeight: { xs: 250, sm: 300 }, overflow: 'auto' }}>
-              <Grid container spacing={1}>
+            <Box sx={{ 
+              flex: 1,
+              overflow: 'auto',
+              border: 1,
+              borderColor: 'divider',
+              borderRadius: 1,
+              p: { xs: 0.5, sm: 1 }
+            }}>
+              <Grid container spacing={{ xs: 0.5, sm: 1 }}>
                 {availableTicketTypes.map((ticketType) => (
-                  <Grid item xs={12} sm={6} md={4} key={ticketType.id}>
+                  <Grid item xs={12} sm={6} md={4} lg={3} key={ticketType.id}>
                     <Card 
                       sx={{ 
                         cursor: 'pointer',
-                        '&:hover': { backgroundColor: 'action.hover' },
-                        height: '100%'
+                        '&:hover': { 
+                          backgroundColor: 'action.hover',
+                          transform: 'scale(1.02)'
+                        },
+                        height: '100%',
+                        minHeight: { xs: 60, sm: 80 },
+                        transition: 'all 0.2s'
                       }}
                       onClick={() => handleAddTicket(ticketType)}
                     >
-                      <CardContent sx={{ p: { xs: 1, sm: 2 } }}>
-                        <Typography variant={isMobile ? "caption" : "body2"} fontWeight="bold">
+                      <CardContent sx={{ 
+                        p: { xs: 0.5, sm: 1, md: 1.5 },
+                        '&:last-child': { pb: { xs: 0.5, sm: 1, md: 1.5 } }
+                      }}>
+                        <Typography 
+                          variant={isMobile ? "caption" : "body2"} 
+                          fontWeight="bold"
+                          sx={{ 
+                            fontSize: { xs: '0.7rem', sm: '0.8rem', md: '0.875rem' },
+                            lineHeight: 1.2
+                          }}
+                          noWrap
+                        >
                           {ticketType.name}
                         </Typography>
-                        <Typography variant="caption" color="text.secondary" display="block">
+                        <Typography 
+                          variant="caption" 
+                          color="text.secondary" 
+                          display="block"
+                          sx={{ 
+                            fontSize: { xs: '0.65rem', sm: '0.7rem', md: '0.75rem' },
+                            lineHeight: 1.1
+                          }}
+                          noWrap
+                        >
                           {ticketType.category} - {ticketType.subcategory}
                         </Typography>
-                        <Typography variant={isMobile ? "caption" : "body2"} color="primary">
+                        <Typography 
+                          variant={isMobile ? "caption" : "body2"} 
+                          color="primary"
+                          fontWeight="bold"
+                          sx={{ 
+                            fontSize: { xs: '0.7rem', sm: '0.8rem', md: '0.875rem' },
+                            mt: 0.25
+                          }}
+                        >
                           {formatCurrency(ticketType.price)}
                         </Typography>
                       </CardContent>
@@ -1353,83 +1446,176 @@ const OrdersManagement = () => {
 
       case 1: // Meals Tab
         return (
-          <Box>
-            <Typography variant={isMobile ? "body1" : "h6"} gutterBottom>
+          <Box sx={{ height: '100%', display: 'flex', flexDirection: 'column' }}>
+            <Typography 
+              variant={isMobile ? "subtitle2" : "h6"} 
+              gutterBottom
+              sx={{ fontSize: { xs: '0.9rem', sm: '1rem', md: '1.1rem' } }}
+            >
               Current Meals
             </Typography>
             {editableOrder.meals.length === 0 ? (
-              <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
+              <Typography 
+                variant="body2" 
+                color="text.secondary" 
+                sx={{ 
+                  mb: 2,
+                  fontSize: { xs: '0.8rem', sm: '0.875rem' }
+                }}
+              >
                 No meals in this order
               </Typography>
             ) : (
-              <List sx={{ mb: 2, maxHeight: { xs: 200, sm: 300 }, overflow: 'auto' }}>
+              <Box sx={{ 
+                mb: 2, 
+                maxHeight: { xs: '30vh', sm: '35vh', md: '40vh' }, 
+                overflow: 'auto',
+                border: 1,
+                borderColor: 'divider',
+                borderRadius: 1
+              }}>
                 {editableOrder.meals.map((meal, index) => (
-                  <ListItem key={index} divider>
-                    <ListItemText
-                      primary={
-                        <Typography variant={isMobile ? "body2" : "body1"}>
-                          {meal.name}
-                        </Typography>
-                      }
-                      secondary={
-                        <Typography variant="caption" color="text.secondary">
-                          {formatCurrency(meal.price_at_order)} each
-                        </Typography>
-                      }
-                    />
-                    <ListItemSecondaryAction>
-                      <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                        <IconButton 
-                          size="small" 
-                          onClick={() => handleRemoveMeal(meal.meal_id)}
-                        >
-                          <RemoveIcon />
-                        </IconButton>
-                        <Typography variant="body2" sx={{ minWidth: 20, textAlign: 'center' }}>
-                          {meal.quantity}
-                        </Typography>
-                        <IconButton 
-                          size="small" 
-                          onClick={() => handleAddMeal({
-                            id: meal.meal_id,
-                            name: meal.name,
-                            price: meal.price_at_order
-                          })}
-                        >
-                          <AddIcon />
-                        </IconButton>
-                      </Box>
-                    </ListItemSecondaryAction>
-                  </ListItem>
+                  <Box
+                    key={index}
+                    sx={{
+                      p: { xs: 1, sm: 1.5 },
+                      borderBottom: index < editableOrder.meals.length - 1 ? 1 : 0,
+                      borderColor: 'divider',
+                      display: 'flex',
+                      justifyContent: 'space-between',
+                      alignItems: 'center',
+                      gap: 1
+                    }}
+                  >
+                    <Box sx={{ minWidth: 0, flex: 1 }}>
+                      <Typography 
+                        variant={isMobile ? "body2" : "body1"}
+                        sx={{ 
+                          fontWeight: 'medium',
+                          fontSize: { xs: '0.8rem', sm: '0.875rem' }
+                        }}
+                        noWrap
+                      >
+                        {meal.name}
+                      </Typography>
+                      <Typography 
+                        variant="caption" 
+                        color="text.secondary"
+                        sx={{ fontSize: { xs: '0.7rem', sm: '0.75rem' } }}
+                      >
+                        {formatCurrency(meal.price_at_order)} each
+                      </Typography>
+                    </Box>
+                    <Box sx={{ 
+                      display: 'flex', 
+                      alignItems: 'center', 
+                      gap: { xs: 0.5, sm: 1 },
+                      flexShrink: 0
+                    }}>
+                      <IconButton 
+                        size="small" 
+                        onClick={() => handleRemoveMeal(meal.meal_id)}
+                        sx={{ p: { xs: 0.25, sm: 0.5 } }}
+                      >
+                        <RemoveIcon fontSize="small" />
+                      </IconButton>
+                      <Typography 
+                        variant="body2" 
+                        sx={{ 
+                          minWidth: { xs: 16, sm: 20 }, 
+                          textAlign: 'center',
+                          fontSize: { xs: '0.8rem', sm: '0.875rem' },
+                          fontWeight: 'bold'
+                        }}
+                      >
+                        {meal.quantity}
+                      </Typography>
+                      <IconButton 
+                        size="small" 
+                        onClick={() => handleAddMeal({
+                          id: meal.meal_id,
+                          name: meal.name,
+                          price: meal.price_at_order
+                        })}
+                        sx={{ p: { xs: 0.25, sm: 0.5 } }}
+                      >
+                        <AddIcon fontSize="small" />
+                      </IconButton>
+                    </Box>
+                  </Box>
                 ))}
-              </List>
+              </Box>
             )}
 
-            <Divider sx={{ my: 2 }} />
+            <Divider sx={{ my: { xs: 1, sm: 2 } }} />
 
-            <Typography variant={isMobile ? "body1" : "h6"} gutterBottom>
+            <Typography 
+              variant={isMobile ? "subtitle2" : "h6"} 
+              gutterBottom
+              sx={{ fontSize: { xs: '0.9rem', sm: '1rem', md: '1.1rem' } }}
+            >
               Add Meals
             </Typography>
-            <Box sx={{ maxHeight: { xs: 250, sm: 300 }, overflow: 'auto' }}>
-              <Grid container spacing={1}>
+            <Box sx={{ 
+              flex: 1,
+              overflow: 'auto',
+              border: 1,
+              borderColor: 'divider',
+              borderRadius: 1,
+              p: { xs: 0.5, sm: 1 }
+            }}>
+              <Grid container spacing={{ xs: 0.5, sm: 1 }}>
                 {availableMeals.map((meal) => (
-                  <Grid item xs={12} sm={6} md={4} key={meal.id}>
+                  <Grid item xs={12} sm={6} md={4} lg={3} key={meal.id}>
                     <Card 
                       sx={{ 
                         cursor: 'pointer',
-                        '&:hover': { backgroundColor: 'action.hover' },
-                        height: '100%'
+                        '&:hover': { 
+                          backgroundColor: 'action.hover',
+                          transform: 'scale(1.02)'
+                        },
+                        height: '100%',
+                        minHeight: { xs: 60, sm: 80 },
+                        transition: 'all 0.2s'
                       }}
                       onClick={() => handleAddMeal(meal)}
                     >
-                      <CardContent sx={{ p: { xs: 1, sm: 2 } }}>
-                        <Typography variant={isMobile ? "caption" : "body2"} fontWeight="bold">
+                      <CardContent sx={{ 
+                        p: { xs: 0.5, sm: 1, md: 1.5 },
+                        '&:last-child': { pb: { xs: 0.5, sm: 1, md: 1.5 } }
+                      }}>
+                        <Typography 
+                          variant={isMobile ? "caption" : "body2"} 
+                          fontWeight="bold"
+                          sx={{ 
+                            fontSize: { xs: '0.7rem', sm: '0.8rem', md: '0.875rem' },
+                            lineHeight: 1.2
+                          }}
+                          noWrap
+                        >
                           {meal.name}
                         </Typography>
-                        <Typography variant="caption" color="text.secondary" display="block">
+                        <Typography 
+                          variant="caption" 
+                          color="text.secondary" 
+                          display="block"
+                          sx={{ 
+                            fontSize: { xs: '0.65rem', sm: '0.7rem', md: '0.75rem' },
+                            lineHeight: 1.1
+                          }}
+                          noWrap
+                        >
                           {meal.category}
                         </Typography>
-                        <Typography variant={isMobile ? "caption" : "body2"} color="primary">
+                        <Typography 
+                          variant={isMobile ? "caption" : "body2"} 
+                          color="primary"
+                          fontWeight="bold"
+                          sx={{ 
+                            fontSize: { xs: '0.7rem', sm: '0.8rem', md: '0.875rem' },
+                            mt: 0.25
+                          }}
+                        >
                           {formatCurrency(meal.price)}
                         </Typography>
                       </CardContent>
@@ -1448,117 +1634,201 @@ const OrdersManagement = () => {
         const isValid = Math.abs(difference) < 0.01;
         
         return (
-          <Box>
-            <Typography variant={isMobile ? "body1" : "h6"} gutterBottom>
+          <Box sx={{ height: '100%', display: 'flex', flexDirection: 'column' }}>
+            <Typography 
+              variant={isMobile ? "subtitle2" : "h6"} 
+              gutterBottom
+              sx={{ fontSize: { xs: '0.9rem', sm: '1rem', md: '1.1rem' } }}
+            >
               Payment Methods
             </Typography>
-            <Stack spacing={2}>
-              {editableOrder.payments.map((payment, index) => (
-                <Box key={index} sx={{ display: 'flex', gap: 1, alignItems: 'center', flexWrap: 'wrap' }}>
-                  <FormControl size="small" sx={{ minWidth: { xs: 100, sm: 150 } }}>
-                    <InputLabel>Method</InputLabel>
-                    <Select
-                      value={payment.method}
-                      label="Method"
-                      onChange={(e) => handlePaymentMethodChange(index, e.target.value)}
-                    >
-                      {paymentMethods.map((method) => (
-                        <MenuItem 
-                          key={method.value} 
-                          value={method.value}
-                          sx={{ 
-                            color: method.value === 'discount' ? 'error.main' : 'inherit',
-                            fontWeight: method.value === 'CREDIT' ? 'bold' : 'normal'
-                          }}
-                        >
-                          {method.label}
-                        </MenuItem>
-                      ))}
-                    </Select>
-                  </FormControl>
-                  <TextField
-                    label="Amount"
-                    type="number"
-                    size="small"
-                    value={payment.amount}
-                    onChange={(e) => handlePaymentAmountChange(index, e.target.value)}
-                    sx={{ minWidth: { xs: 80, sm: 120 } }}
-                    inputProps={{ 
-                      step: "0.01", 
-                      min: "0",
-                      max: payment.method === 'discount' ? editableOrder.gross_total : undefined
+            
+            <Box sx={{ 
+              flex: 1, 
+              overflow: 'auto',
+              display: 'flex',
+              flexDirection: 'column',
+              gap: { xs: 1, sm: 2 }
+            }}>
+              <Stack spacing={{ xs: 1, sm: 1.5 }}>
+                {editableOrder.payments.map((payment, index) => (
+                  <Box 
+                    key={index} 
+                    sx={{ 
+                      display: 'flex', 
+                      gap: { xs: 0.5, sm: 1 }, 
+                      alignItems: 'flex-start', 
+                      flexWrap: 'wrap',
+                      p: { xs: 1, sm: 1.5 },
+                      border: 1,
+                      borderColor: 'divider',
+                      borderRadius: 1,
+                      bgcolor: 'background.default'
                     }}
-                    error={payment.method === 'discount' && payment.amount > (editableOrder.gross_total || 0)}
-                    helperText={
-                      payment.method === 'discount' && payment.amount > (editableOrder.gross_total || 0)
-                        ? 'Discount cannot exceed gross total'
-                        : undefined
-                    }
-                  />
-                  {editableOrder.payments.length > 1 && (
-                    <IconButton 
-                      color="error" 
-                      size="small"
-                      onClick={() => handleRemovePayment(index)}
-                      title="Remove payment method"
+                  >
+                    <FormControl 
+                      size="small" 
+                      sx={{ 
+                        minWidth: { xs: '100%', sm: 120, md: 150 },
+                        mb: { xs: 1, sm: 0 }
+                      }}
                     >
-                      <DeleteIcon />
-                    </IconButton>
-                  )}
-                </Box>
-              ))}
-              
-              <Button
-                startIcon={<AddIcon />}
-                onClick={handleAddPayment}
-                variant="outlined"
-                size="small"
-                sx={{ alignSelf: 'flex-start' }}
-                disabled={editableOrder.payments.length >= 5}
-              >
-                Add Payment Method {editableOrder.payments.length >= 5 && '(Max 5)'}
-              </Button>
+                      <InputLabel sx={{ fontSize: { xs: '0.8rem', sm: '0.875rem' } }}>
+                        Method
+                      </InputLabel>
+                      <Select
+                        value={payment.method}
+                        label="Method"
+                        onChange={(e) => handlePaymentMethodChange(index, e.target.value)}
+                        sx={{
+                          fontSize: { xs: '0.8rem', sm: '0.875rem' },
+                          '& .MuiSelect-select': {
+                            py: { xs: 1, sm: 1.5 }
+                          }
+                        }}
+                      >
+                        {paymentMethods.map((method) => (
+                          <MenuItem 
+                            key={method.value} 
+                            value={method.value}
+                            sx={{ 
+                              color: method.value === 'discount' ? 'error.main' : 'inherit',
+                              fontWeight: method.value === 'CREDIT' ? 'bold' : 'normal',
+                              fontSize: { xs: '0.8rem', sm: '0.875rem' }
+                            }}
+                          >
+                            {method.label}
+                          </MenuItem>
+                        ))}
+                      </Select>
+                    </FormControl>
+                    
+                    <TextField
+                      label="Amount"
+                      type="number"
+                      size="small"
+                      value={payment.amount}
+                      onChange={(e) => handlePaymentAmountChange(index, e.target.value)}
+                      sx={{ 
+                        minWidth: { xs: '100%', sm: 100, md: 120 },
+                        mb: { xs: 1, sm: 0 },
+                        '& .MuiInputBase-input': {
+                          fontSize: { xs: '0.8rem', sm: '0.875rem' }
+                        },
+                        '& .MuiInputLabel-root': {
+                          fontSize: { xs: '0.8rem', sm: '0.875rem' }
+                        }
+                      }}
+                      inputProps={{ 
+                        step: "0.01", 
+                        min: "0",
+                        max: payment.method === 'discount' ? editableOrder.gross_total : undefined
+                      }}
+                      error={payment.method === 'discount' && payment.amount > (editableOrder.gross_total || 0)}
+                      helperText={
+                        payment.method === 'discount' && payment.amount > (editableOrder.gross_total || 0)
+                          ? 'Discount cannot exceed gross total'
+                          : undefined
+                      }
+                    />
+                    
+                    {editableOrder.payments.length > 1 && (
+                      <IconButton 
+                        color="error" 
+                        size="small"
+                        onClick={() => handleRemovePayment(index)}
+                        title="Remove payment method"
+                        sx={{ 
+                          p: { xs: 0.5, sm: 1 },
+                          alignSelf: { xs: 'center', sm: 'flex-start' },
+                          mt: { sm: 0.5 }
+                        }}
+                      >
+                        <DeleteIcon fontSize="small" />
+                      </IconButton>
+                    )}
+                  </Box>
+                ))}
+                
+                <Button
+                  startIcon={<AddIcon />}
+                  onClick={handleAddPayment}
+                  variant="outlined"
+                  size="small"
+                  sx={{ 
+                    alignSelf: 'flex-start',
+                    fontSize: { xs: '0.75rem', sm: '0.875rem' }
+                  }}
+                  disabled={editableOrder.payments.length >= 5}
+                >
+                  Add Payment {editableOrder.payments.length >= 5 && '(Max 5)'}
+                </Button>
+              </Stack>
               
               <Box sx={{ 
-                mt: 2, 
-                p: 2, 
+                mt: 'auto',
+                p: { xs: 1, sm: 1.5 }, 
                 bgcolor: isValid ? 'success.light' : 'error.light', 
                 borderRadius: 1,
                 border: 1,
                 borderColor: isValid ? 'success.main' : 'error.main'
               }}>
-                <Typography variant="body2" fontWeight="bold" gutterBottom>
-                  Payment Summary
-                </Typography>
-                <Typography variant="body2" color="text.secondary">
-                  Gross Total: {formatCurrency(editableOrder.gross_total || 0)}
-                </Typography>
-                {editableOrder.payments.some(p => p.method === 'discount') && (
-                  <Typography variant="body2" color="error.main">
-                    Discount: -{formatCurrency(
-                      editableOrder.payments
-                        .filter(p => p.method === 'discount')
-                        .reduce((sum, p) => sum + (parseFloat(p.amount) || 0), 0)
-                    )}
-                  </Typography>
-                )}
-                <Typography variant="body2" color="text.secondary">
-                  Net Total: {formatCurrency(orderTotal)}
-                </Typography>
-                <Typography variant="body2" color="text.secondary">
-                  Total Payments: {formatCurrency(totalPayments)}
-                </Typography>
                 <Typography 
                   variant="body2" 
-                  color={isValid ? 'success.main' : 'error.main'}
-                  fontWeight="bold"
+                  fontWeight="bold" 
+                  gutterBottom
+                  sx={{ fontSize: { xs: '0.8rem', sm: '0.875rem' } }}
                 >
-                  {isValid ? '✅ ' : '❌ '}
-                  Difference: {formatCurrency(difference)}
-                  {!isValid && ' (Must be $0.00)'}
+                  Payment Summary
                 </Typography>
+                <Stack spacing={0.25}>
+                  <Typography 
+                    variant="body2" 
+                    color="text.secondary"
+                    sx={{ fontSize: { xs: '0.75rem', sm: '0.8rem' } }}
+                  >
+                    Gross Total: {formatCurrency(editableOrder.gross_total || 0)}
+                  </Typography>
+                  {editableOrder.payments.some(p => p.method === 'discount') && (
+                    <Typography 
+                      variant="body2" 
+                      color="error.main"
+                      sx={{ fontSize: { xs: '0.75rem', sm: '0.8rem' } }}
+                    >
+                      Discount: -{formatCurrency(
+                        editableOrder.payments
+                          .filter(p => p.method === 'discount')
+                          .reduce((sum, p) => sum + (parseFloat(p.amount) || 0), 0)
+                      )}
+                    </Typography>
+                  )}
+                  <Typography 
+                    variant="body2" 
+                    color="text.secondary"
+                    sx={{ fontSize: { xs: '0.75rem', sm: '0.8rem' } }}
+                  >
+                    Net Total: {formatCurrency(orderTotal)}
+                  </Typography>
+                  <Typography 
+                    variant="body2" 
+                    color="text.secondary"
+                    sx={{ fontSize: { xs: '0.75rem', sm: '0.8rem' } }}
+                  >
+                    Total Payments: {formatCurrency(totalPayments)}
+                  </Typography>
+                  <Typography 
+                    variant="body2" 
+                    color={isValid ? 'success.main' : 'error.main'}
+                    fontWeight="bold"
+                    sx={{ fontSize: { xs: '0.75rem', sm: '0.8rem' } }}
+                  >
+                    {isValid ? '✅ ' : '❌ '}
+                    Difference: {formatCurrency(difference)}
+                    {!isValid && ' (Must be $0.00)'}
+                  </Typography>
+                </Stack>
               </Box>
-            </Stack>
+            </Box>
           </Box>
         );
 
@@ -1950,7 +2220,7 @@ const OrdersManagement = () => {
           </TableCell>
         </TableRow>
       );
-    })} {/* This closing parenthesis and brace were missing */}
+    })} {/* ✅ FIXED: Added the missing closing bracket and parenthesis */}
 </TableBody>
                 </Table>
               </TableContainer>
@@ -1968,25 +2238,73 @@ const OrdersManagement = () => {
         </>
       )}
 
-      {/* Compact Mobile Edit Dialog */}
+      {/* Responsive Edit Dialog */}
       <Dialog 
         open={editDialogOpen} 
         onClose={handleCloseEditDialog}
         fullWidth
-        maxWidth="lg"
-        fullScreen={isSmallMobile}
+        maxWidth={false}
+        fullScreen={isMobile}
         PaperProps={{
-          sx: isMobile ? {
-            height: '100vh',
-            maxHeight: '100vh',
-            margin: 0,
-            borderRadius: 0
-          } : {}
+          sx: {
+            // Mobile: Full screen with safe areas
+            ...(isMobile ? {
+              height: '100vh',
+              maxHeight: '100vh',
+              width: '100vw',
+              maxWidth: '100vw',
+              margin: 0,
+              borderRadius: 0,
+              // Add safe area insets for mobile browsers
+              paddingTop: 'env(safe-area-inset-top)',
+              paddingBottom: 'env(safe-area-inset-bottom)',
+              // Ensure it's below browser UI
+              position: 'fixed',
+              top: 0,
+              left: 0,
+              zIndex: 1300
+            } : {
+              // Desktop: Responsive sizing
+              width: '90vw',
+              maxWidth: '1200px',
+              height: '85vh',
+              maxHeight: '800px',
+              margin: 'auto'
+            })
+          }
         }}
+        // Add these props for mobile
+        {...(isMobile && {
+          TransitionProps: {
+            onEntered: () => {
+              // Prevent body scroll when dialog opens on mobile
+              document.body.style.overflow = 'hidden';
+              // Set viewport height to actual visible height
+              document.documentElement.style.setProperty('--vh', `${window.innerHeight * 0.01}px`);
+            },
+            onExited: () => {
+              // Restore body scroll when dialog closes
+              document.body.style.overflow = 'unset';
+            }
+          }
+        })}
       >
         <DialogTitle sx={{ 
-          p: { xs: 1, sm: 2 },
-          fontSize: { xs: '1rem', sm: '1.5rem' }
+          p: { xs: 1, sm: 1.5, md: 2 },
+          fontSize: { xs: '0.9rem', sm: '1.1rem', md: '1.25rem' },
+          borderBottom: 1,
+          borderColor: 'divider',
+          position: 'sticky',
+          top: 0,
+          zIndex: 1,
+          bgcolor: 'background.paper',
+          // Mobile adjustments
+          ...(isMobile && {
+            // Add top padding for mobile browser UI
+            pt: { xs: 2 },
+            // Ensure it's visible above browser chrome
+            minHeight: 56
+          })
         }}>
           <Stack 
             direction="row"
@@ -1994,81 +2312,143 @@ const OrdersManagement = () => {
             alignItems="center"
             spacing={1}
           >
-            <Typography variant={isMobile ? "subtitle1" : "h5"} noWrap>
-              Edit #{selectedOrder?.order_id}
-            </Typography>
+            <Box sx={{ minWidth: 0, flex: 1 }}>
+              <Typography 
+                variant={isMobile ? "subtitle2" : "h6"} 
+                noWrap
+                fontWeight="bold"
+              >
+                Edit Order #{selectedOrder?.order_id}
+              </Typography>
+              {selectedOrder && (
+                <Typography 
+                  variant="caption" 
+                  color="text.secondary" 
+                  sx={{ 
+                    display: 'block', 
+                    mt: 0.25,
+                    fontSize: { xs: '0.7rem', sm: '0.75rem' }
+                  }}
+                >
+                  {new Date(selectedOrder.created_at).toLocaleDateString()} • {selectedOrder.user_name}
+                </Typography>
+              )}
+            </Box>
             <Chip 
               label={formatCurrency(editableOrder?.total_amount || 0)}
               color="primary"
-              size="small"
+              size={isMobile ? "small" : "medium"}
+              sx={{ 
+                minWidth: 'auto',
+                '& .MuiChip-label': {
+                  fontSize: { xs: '0.7rem', sm: '0.8rem' }
+                }
+              }}
             />
           </Stack>
-          
-          {selectedOrder && (
-            <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mt: 0.5 }}>
-              {new Date(selectedOrder.created_at).toLocaleString()} • {selectedOrder.user_name}
-            </Typography>
-          )}
         </DialogTitle>
 
         <Tabs 
           value={editTab} 
           onChange={handleEditTabChange} 
           sx={{ 
-            px: { xs: 1, sm: 2 }, 
+            px: { xs: 0.5, sm: 1, md: 2 }, 
             borderBottom: 1, 
             borderColor: 'divider',
-            minHeight: 'auto'
+            minHeight: { xs: 40, sm: 48 },
+            '& .MuiTab-root': {
+              minHeight: { xs: 40, sm: 48 },
+              fontSize: { xs: '0.7rem', sm: '0.75rem', md: '0.8rem' },
+              padding: { xs: '6px 8px', sm: '8px 12px', md: '12px 16px' }
+            }
           }}
-          variant="fullWidth"
+          variant={isMobile ? "fullWidth" : "standard"}
+          scrollButtons="auto"
+          allowScrollButtonsMobile
         >
           <Tab 
             icon={<LocalActivityIcon fontSize="small" />} 
-            iconPosition="start"
+            iconPosition={isMobile ? "top" : "start"}
             label="Tickets"
-            sx={{ 
-              fontSize: '0.75rem',
-              minHeight: 'auto',
-              py: 1
-            }}
+            wrapped
           />
           <Tab 
             icon={<RestaurantIcon fontSize="small" />} 
-            iconPosition="start"
+            iconPosition={isMobile ? "top" : "start"}
             label="Meals"
-            sx={{ 
-              fontSize: '0.75rem',
-              minHeight: 'auto',
-              py: 1
-            }}
+            wrapped
           />
           <Tab 
             icon={<PaymentIcon fontSize="small" />} 
-            iconPosition="start"
+            iconPosition={isMobile ? "top" : "start"}
             label="Payment"
-            sx={{ 
-              fontSize: '0.75rem',
-              minHeight: 'auto',
-              py: 1
-            }}
+            wrapped
           />
         </Tabs>
         
-        <DialogContent dividers sx={{ 
-          p: { xs: 1, sm: 2 },
-          height: isSmallMobile ? 'calc(100vh - 180px)' : 'auto'
-        }}>
+        <DialogContent 
+          dividers 
+          sx={{ 
+            p: { xs: 0.5, sm: 1, md: 2 },
+            // Mobile: Use CSS custom property for dynamic height
+            height: isMobile 
+              ? 'calc(100vh - 200px)' // Fallback
+              : 'calc(85vh - 200px)',
+            // Better mobile height calculation
+            ...(isMobile && {
+              height: 'calc(var(--vh, 1vh) * 100 - 200px)',
+              minHeight: '50vh',
+              maxHeight: 'calc(100vh - 200px)'
+            }),
+            overflow: 'auto',
+            '&::-webkit-scrollbar': {
+              width: '6px',
+            },
+            '&::-webkit-scrollbar-thumb': {
+              backgroundColor: 'rgba(0,0,0,0.2)',
+              borderRadius: '3px',
+            }
+          }}
+        >
           {renderEditTabContent()}
         </DialogContent>
         
         <DialogActions sx={{ 
-          p: { xs: 1, sm: 2 },
-          gap: 1
+          p: { xs: 1, sm: 1.5, md: 2 },
+          gap: { xs: 0.5, sm: 1 },
+          borderTop: 1,
+          borderColor: 'divider',
+          bgcolor: 'background.paper',
+          zIndex: 1,
+          // Mobile: Stick to bottom of screen
+          ...(isMobile ? {
+            position: 'fixed',
+            bottom: 0,
+            left: 0,
+            right: 0,
+            width: '100%',
+            pb: 'max(16px, env(safe-area-inset-bottom))', // Safe area for home indicator
+            pt: 2,
+            boxShadow: '0 -2px 10px rgba(0,0,0,0.1)', // Add shadow for better separation
+            borderTop: '1px solid',
+            borderColor: 'divider'
+          } : {
+            // Desktop: Keep sticky within dialog
+            position: 'sticky',
+            bottom: 0
+          })
         }}>
           <Button 
             onClick={handleCloseEditDialog}
-            size="small"
-            sx={{ flex: 1 }}
+            size={isMobile ? "small" : "medium"}
+            sx={{ 
+              flex: 1,
+              fontSize: { xs: '0.75rem', sm: '0.875rem' },
+              ...(isMobile && {
+                minHeight: 44,
+                fontSize: '0.85rem'
+              })
+            }}
           >
             Cancel
           </Button>
@@ -2079,12 +2459,10 @@ const OrdersManagement = () => {
             disabled={
               loading || 
               !editableOrder || 
-              // Disable if payment difference exists
               Math.abs(
                 (editableOrder?.payments?.reduce((sum, p) => sum + (parseFloat(p.amount) || 0), 0) || 0) - 
                 (parseFloat(editableOrder?.total_amount) || 0)
               ) >= 0.01 ||
-              // Disable if no changes made
               !(
                 (editableOrder?.addedTickets && editableOrder.addedTickets.length > 0) ||
                 (editableOrder?.removedTickets && editableOrder.removedTickets.length > 0) ||
@@ -2097,13 +2475,19 @@ const OrdersManagement = () => {
                  }))) !== JSON.stringify((editableOrder.originalPayments || []).map(p => ({
                    method: p.method,
                    amount: parseFloat(p.amount).toFixed(2)
-                 }))))
-              )
+                 })))))
             }
-            size="small"
-            sx={{ flex: 2 }}
+            size={isMobile ? "small" : "medium"}
+            sx={{ 
+              flex: 2,
+              fontSize: { xs: '0.75rem', sm: '0.875rem' },
+              ...(isMobile && {
+                minHeight: 44,
+                fontSize: '0.85rem'
+              })
+            }}
           >
-            {loading ? 'Saving...' : 'Save'}
+            {loading ? 'Saving...' : 'Save Changes'}
           </Button>
         </DialogActions>
       </Dialog>
@@ -2194,3 +2578,4 @@ const OrdersManagement = () => {
 };
 
 export default OrdersManagement;
+
