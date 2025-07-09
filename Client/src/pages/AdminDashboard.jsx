@@ -83,6 +83,7 @@ const DrawerHeader = styled('div')(({ theme }) => ({
 }));
 
 // Responsive StatsCard component
+// Update the StatsCard component
 const StatsCard = ({ icon, title, value, color, secondaryValue }) => {
   const theme = useTheme();
   const isMobile = useMediaQuery(theme.breakpoints.down('sm'));
@@ -100,7 +101,14 @@ const StatsCard = ({ icon, title, value, color, secondaryValue }) => {
         boxShadow: '0 8px 25px rgba(0, 0, 0, 0.15)',
       }
     }}>
-      <CardContent sx={{ flexGrow: 1, position: 'relative', pt: 2, pb: 2 }}>
+      <CardContent sx={{ 
+        flexGrow: 1, 
+        position: 'relative', 
+        pt: 2, 
+        pb: 2,
+        // Add more padding for better spacing
+        px: { xs: 1.5, sm: 2 }
+      }}>
         <Box sx={{ 
           position: 'absolute', 
           top: isMobile ? 8 : 16, 
@@ -118,13 +126,34 @@ const StatsCard = ({ icon, title, value, color, secondaryValue }) => {
         </Box>
         <Typography 
           variant={isMobile ? "caption" : "subtitle2"} 
-          sx={{ color: 'text.secondary', mb: 1 }}
+          sx={{ 
+            color: 'text.secondary', 
+            mb: 1,
+            fontSize: { xs: '0.7rem', sm: '0.875rem' },
+            lineHeight: 1.2
+          }}
         >
           {title}
         </Typography>
         <Typography 
           variant={isMobile ? "h6" : "h4"} 
-          sx={{ fontWeight: 'bold', mb: 0.5 }}
+          sx={{ 
+            fontWeight: 'bold', 
+            mb: 0.5,
+            // Make text responsive for large numbers
+            fontSize: {
+              xs: title === 'Total Revenue' ? '1.1rem' : '1.25rem', // Smaller for revenue on mobile
+              sm: title === 'Total Revenue' ? '1.5rem' : '2.125rem', // Smaller for revenue on tablet
+              md: title === 'Total Revenue' ? '1.75rem' : '2.125rem'  // Smaller for revenue on desktop
+            },
+            lineHeight: 1.1,
+            // Prevent text overflow
+            overflow: 'hidden',
+            textOverflow: 'ellipsis',
+            whiteSpace: 'nowrap',
+            // Add more space from the right for the icon
+            pr: { xs: 4, sm: 5 }
+          }}
         >
           {value}
         </Typography>
@@ -132,6 +161,10 @@ const StatsCard = ({ icon, title, value, color, secondaryValue }) => {
           <Typography 
             variant={isMobile ? "caption" : "body2"} 
             color="text.secondary"
+            sx={{
+              fontSize: { xs: '0.65rem', sm: '0.875rem' },
+              lineHeight: 1.2
+            }}
           >
             {secondaryValue}
           </Typography>
@@ -140,7 +173,6 @@ const StatsCard = ({ icon, title, value, color, secondaryValue }) => {
     </Card>
   );
 };
-
 const AdminDashboard = () => {
   const theme = useTheme();
   const navigate = useNavigate();
@@ -251,48 +283,59 @@ const AdminDashboard = () => {
   };
 
   // Update processOrderData to calculate average ticket value
-  const processOrderData = (data) => {
-    if (!data || data.length === 0) {
-      setKpiData({
-        totalRevenue: "0.00",
-        ticketsCount: "0",
-        mealsCount: "0",
-        avgTicketValue: "0.00"
-      });
-      return;
-    }
-
-    let totalRevenue = 0;
-    let ticketsCount = 0;
-    let mealsCount = 0;
-    
-    data.forEach(order => {
-      const orderAmount = parseFloat(order.total_amount || 0);
-      totalRevenue += orderAmount;
-      
-      if (order.tickets) {
-        order.tickets.forEach(ticket => {
-          ticketsCount += (ticket.quantity || 0);
-        });
-      }
-      
-      if (order.meals) {
-        order.meals.forEach(meal => {
-          mealsCount += (meal.quantity || 0);
-        });
-      }
-    });
-    
-    const avgTicketValue = ticketsCount ? totalRevenue / ticketsCount : 0;
-    
+  // Update the processOrderData function to format large numbers better
+const processOrderData = (data) => {
+  if (!data || data.length === 0) {
     setKpiData({
-      totalRevenue: totalRevenue.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }),
-      ticketsCount: ticketsCount.toString(),
-      mealsCount: mealsCount.toString(),
-      avgTicketValue: avgTicketValue.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+      totalRevenue: "0.00",
+      ticketsCount: "0",
+      mealsCount: "0",
+      avgTicketValue: "0.00"
     });
-  };
+    return;
+  }
 
+  let totalRevenue = 0;
+  let ticketsCount = 0;
+  let mealsCount = 0;
+  
+  data.forEach(order => {
+    const orderAmount = parseFloat(order.total_amount || 0);
+    totalRevenue += orderAmount;
+    
+    if (order.tickets) {
+      order.tickets.forEach(ticket => {
+        ticketsCount += (ticket.quantity || 0);
+      });
+    }
+    
+    if (order.meals) {
+      order.meals.forEach(meal => {
+        mealsCount += (meal.quantity || 0);
+      });
+    }
+  });
+  
+  const avgTicketValue = ticketsCount ? totalRevenue / ticketsCount : 0;
+  
+  // Format large numbers more compactly
+  const formatLargeNumber = (num) => {
+    if (num >= 1000000) {
+      return (num / 1000000).toFixed(1) + 'M';
+    } else if (num >= 1000) {
+      return (num / 1000).toFixed(1) + 'K';
+    } else {
+      return num.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+    }
+  };
+  
+  setKpiData({
+    totalRevenue: formatLargeNumber(totalRevenue),
+    ticketsCount: ticketsCount.toLocaleString(),
+    mealsCount: mealsCount.toLocaleString(),
+    avgTicketValue: avgTicketValue.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+  });
+};
   // Fetch data on component mount and when date range changes
   useEffect(() => {
     fetchData();
@@ -743,7 +786,7 @@ const AdminDashboard = () => {
 
               {/* Responsive KPI Section */}
               <Grid container spacing={isMobile ? 2 : 3} sx={{ mb: 4 }}>
-                <Grid item xs={6} md={3}>
+                <Grid item xs={6} sm={6} md={3}>
                   <StatsCard 
                     icon={<AttachMoneyIcon />}
                     title="Total Revenue"
@@ -752,7 +795,7 @@ const AdminDashboard = () => {
                     secondaryValue={`${orders.length} orders`}
                   />
                 </Grid>
-                <Grid item xs={6} md={3}>
+                <Grid item xs={6} sm={6} md={3}>
                   <StatsCard 
                     icon={<ConfirmationNumberIcon />}
                     title="Tickets Sold"
@@ -761,7 +804,7 @@ const AdminDashboard = () => {
                     secondaryValue="All categories"
                   />
                 </Grid>
-                <Grid item xs={6} md={3}>
+                <Grid item xs={6} sm={6} md={3}>
                   <StatsCard 
                     icon={<RestaurantIcon />}
                     title="Meals Sold"
@@ -770,7 +813,7 @@ const AdminDashboard = () => {
                     secondaryValue="All types"
                   />
                 </Grid>
-                <Grid item xs={6} md={3}>
+                <Grid item xs={6} sm={6} md={3}>
                   <StatsCard 
                     icon={<ConfirmationNumberIcon />}
                     title="Avg. Ticket Value"
