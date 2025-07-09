@@ -1,4 +1,6 @@
 ﻿import React, { useState, useEffect } from 'react';
+import { useAuth } from '../contexts/AuthContext';
+import apiClient from '../utils/api';
 import {
   Box,
   Paper,
@@ -196,6 +198,7 @@ const MobileOrderCard = ({ order, onEdit, onDelete, formatCurrency, formatPaymen
 };
 
 const OrdersManagement = () => {
+  const { user, isAdmin, logout } = useAuth();
   // Get theme and responsive breakpoints
   const theme = useTheme();
   const isMobile = useMediaQuery(theme.breakpoints.down('md'));
@@ -238,7 +241,7 @@ const OrdersManagement = () => {
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [orderToDelete, setOrderToDelete] = useState(null);
 
-  const baseUrl = window.runtimeConfig?.apiBaseUrl;
+  // const baseUrl = window.runtimeConfig?.apiBaseUrl;
 
   // Update rows per page when screen size changes
   useEffect(() => {
@@ -246,66 +249,43 @@ const OrdersManagement = () => {
     setPage(0);
   }, [isMobile]);
 
+  // Security check - ensure only admins can access
+  useEffect(() => {
+    if (!user || !isAdmin()) {
+      logout();
+      window.location.href = '/signin';
+      return;
+    }
+  }, [user, isAdmin, logout]);
+
   // Fetch orders on component mount and when date range changes
   useEffect(() => {
     fetchOrders();
-  }, [fromDate, toDate, baseUrl]);
+  }, [fromDate, toDate, user, isAdmin]);
   
   // Fetch ticket types and meals for order editing
   useEffect(() => {
     fetchTicketTypes();
     fetchMeals();
-  }, [baseUrl]);
+  }, [user, isAdmin]);
   
   // Fetch payment methods on component mount
   useEffect(() => {
     fetchPaymentMethods();
-  }, [baseUrl]);
+  }, [user, isAdmin]);
   
   // Fetch orders from API
   const fetchOrders = async () => {
-    if (!baseUrl) {
-      setError('API configuration not available');
-      setLoading(false);
-      return;
-    }
-
-    setLoading(true);
-    setError(null);
-    
     try {
-      const token = localStorage.getItem('authToken');
+      setLoading(true);
+      setError('');
       
-      if (!token) {
-        setError('Authentication required. Please log in again.');
-        notify.error('Authentication required. Please log in again.');
-        setLoading(false);
-        return;
-      }
-      
-      const params = {
-        startDate: fromDate.format('YYYY-MM-DD'),
-        endDate: toDate.format('YYYY-MM-DD')
-      };
-      
-      const response = await axios.get(`${baseUrl}/api/orders/range-report`, { 
-        params,
-        headers: { Authorization: `Bearer ${token}` }
-      });
-      
-      console.log('Orders fetched:', response.data);
-      
-      if (Array.isArray(response.data)) {
-        setOrders(response.data);
-      } else {
-        setError('Unexpected data format received');
-        notify.error('Unexpected data format received');
-        setOrders([]);
-      }
+      // Use the secure API client
+      const data = await apiClient.get('/api/orders');
+      setOrders(data);
     } catch (error) {
       console.error('Error fetching orders:', error);
-      setError('Failed to fetch orders. Please try again.');
-      notify.error('Failed to fetch orders. Please try again.');
+      setError(error.message || 'Failed to fetch orders');
     } finally {
       setLoading(false);
     }
@@ -313,7 +293,7 @@ const OrdersManagement = () => {
 
   // Fetch ticket types for adding tickets to order
   const fetchTicketTypes = async () => {
-    if (!baseUrl) return;
+    if (!user || !isAdmin()) return;
 
     try {
       const token = localStorage.getItem('authToken');
@@ -345,7 +325,7 @@ const OrdersManagement = () => {
   
   // Fetch meals for adding to order
   const fetchMeals = async () => {
-    if (!baseUrl) return;
+    if (!user || !isAdmin()) return;
 
     try {
       const token = localStorage.getItem('authToken');
@@ -377,7 +357,7 @@ const OrdersManagement = () => {
 
   // Function to fetch payment methods from database
   const fetchPaymentMethods = async () => {
-    if (!baseUrl) return;
+    if (!user || !isAdmin()) return;
 
     try {
       const token = localStorage.getItem('authToken');
@@ -541,31 +521,19 @@ const OrdersManagement = () => {
 
     try {
       setLoading(true);
+      
+      // Use the secure API client
+      await apiClient.delete(`/api/orders/${orderToDelete.order_id}`);
+
+      notify.success('Order deleted successfully');
       setDeleteDialogOpen(false);
-      
-      const token = localStorage.getItem('authToken');
-      
-      if (!token) {
-        notify.error('Authentication required. Please log in again.');
-        return;
-      }
-
-      const response = await axios.delete(`${baseUrl}/api/orders/${orderToDelete.order_id}`, {
-        headers: { Authorization: `Bearer ${token}` }
-      });
-
-      notify.success(`✅ Order #${orderToDelete.order_id} deleted successfully`);
-      
-      // Refresh orders list
-      await fetchOrders();
-      
+      setOrderToDelete(null);
+      fetchOrders(); // Refresh orders
     } catch (error) {
       console.error('Error deleting order:', error);
-      const message = error.response?.data?.error || 'Failed to delete order';
-      notify.error(`❌ ${message}`);
+      notify.error(error.message || 'Failed to delete order');
     } finally {
       setLoading(false);
-      setOrderToDelete(null);
     }
   };
 
@@ -1057,199 +1025,26 @@ const OrdersManagement = () => {
 
   // Save order changes with validation
   const saveOrderChanges = async () => {
-    if (!baseUrl) {
-      notify.error('API configuration not available');
-      return;
-    }
+    if (!editableOrder) return;
 
     try {
-      if (!editableOrder || !selectedOrder) return;
-      
-      // 1. Check if there's a payment total difference (like old file)
-      const totalPayments = editableOrder.payments.reduce((sum, p) => sum + (parseFloat(p.amount) || 0), 0);
-      const orderTotal = parseFloat(editableOrder.total_amount) || 0;
-      const difference = Math.abs(totalPayments - orderTotal);
-      const isPaymentValid = difference < 0.01;
-      
-      if (!isPaymentValid) {
-        notify.error(
-          `Payment total (${formatCurrency(totalPayments)}) must match order total (${formatCurrency(orderTotal)}). Difference: ${formatCurrency(difference)}`
-        );
-        return;
-      }
-      
-      // 2. Check if any changes were actually made (like old file)
-      const hasTicketChanges = (editableOrder.addedTickets && editableOrder.addedTickets.length > 0) ||
-                              (editableOrder.removedTickets && editableOrder.removedTickets.length > 0);
-      
-      const hasMealChanges = (editableOrder.addedMeals && editableOrder.addedMeals.length > 0) ||
-                            (editableOrder.removedMeals && editableOrder.removedMeals.length > 0);
-      
-      // Check if payments changed by comparing with original payments
-      const hasPaymentChanges = JSON.stringify(editableOrder.payments.map(p => ({
-        method: p.method,
-        amount: parseFloat(p.amount).toFixed(2)
-      }))) !== JSON.stringify((editableOrder.originalPayments || []).map(p => ({
-        method: p.method,
-        amount: parseFloat(p.amount).toFixed(2)
-      })));
-      
-      const hasAnyChanges = hasTicketChanges || hasMealChanges || hasPaymentChanges;
-      
-      if (!hasAnyChanges) {
-        notify.warning('No changes detected. Please make changes before saving.');
-        return;
-      }
-      
-      // 3. Additional validations from old file
-      if (!editableOrder.tickets?.length && !editableOrder.meals?.length) {
-        notify.error('Order must contain at least one ticket or meal');
-        return;
-      }
-      
-      if (!editableOrder.payments?.length) {
-        notify.error('Order must have at least one payment method');
-        return;
-      }
-      
-      const hasNegativePayment = editableOrder.payments.some(p => (parseFloat(p.amount) || 0) < 0);
-      if (hasNegativePayment) {
-        notify.error('Payment amounts must be positive');
-        return;
-      }
-      
-      if ((parseFloat(editableOrder.total_amount) || 0) < 0) {
-        notify.error('Order total cannot be negative');
-        return;
-      }
-      
-      // 4. Validate discount doesn't exceed gross total
-      const discountAmount = editableOrder.payments
-        .filter(payment => payment.method === 'discount')
-        .reduce((sum, payment) => sum + (parseFloat(payment.amount) || 0), 0);
-      
-      const grossTotal = parseFloat(editableOrder.gross_total || 0);
-      
-      if (discountAmount > grossTotal) {
-        notify.error(`Total discount (${formatCurrency(discountAmount)}) cannot exceed gross total (${formatCurrency(grossTotal)})`);
-        return;
-      }
-      
       setLoading(true);
-      const token = localStorage.getItem('authToken');
       
-      if (!token) {
-        notify.error('Authentication required. Please log in again.');
-        setLoading(false);
-        return;
-      }
-      
-      // Format payload with careful number parsing and validation
-      const payments = editableOrder.payments.map(payment => {
-        const amount = Number(parseFloat(payment.amount).toFixed(2));
-        if (isNaN(amount) || amount < 0) {
-          throw new Error(`Invalid payment amount: ${payment.amount}`);
-        }
-        return {
-          method: payment.method,
-          amount: amount
-        };
+      // Use the secure API client
+      await apiClient.put(`/api/orders/${editableOrder.order_id}`, {
+        addedTickets: editableOrder.addedTickets || [],
+        removedTickets: editableOrder.removedTickets || [],
+        addedMeals: editableOrder.addedMeals || [],
+        removedMeals: editableOrder.removedMeals || [],
+        payments: editableOrder.payments || []
       });
-      
-      // Sanitize and validate arrays before sending
-      const addedTickets = Array.isArray(editableOrder.addedTickets) 
-        ? editableOrder.addedTickets.map(ticket => ({
-            ...ticket,
-            quantity: Number(ticket.quantity)
-          })).filter(ticket => ticket.quantity > 0)
-        : [];
-        
-      const removedTickets = Array.isArray(editableOrder.removedTickets)
-        ? editableOrder.removedTickets.map(ticket => ({
-            ...ticket,
-            quantity: Number(ticket.quantity)
-          })).filter(ticket => ticket.quantity > 0)
-        : [];
-        
-      const addedMeals = Array.isArray(editableOrder.addedMeals)
-        ? editableOrder.addedMeals.map(meal => ({
-            ...meal,
-            quantity: Number(meal.quantity),
-            price: Number(parseFloat(meal.price).toFixed(2))
-          })).filter(meal => meal.quantity > 0)
-        : [];
-        
-      const removedMeals = Array.isArray(editableOrder.removedMeals)
-        ? editableOrder.removedMeals.map(meal => ({
-            ...meal,
-            quantity: Number(meal.quantity)
-          })).filter(meal => meal.quantity > 0)
-        : [];
-    
-      // Build the update payload
-      const updatePayload = {
-        order_id: selectedOrder.order_id,
-        addedTickets,
-        removedTickets,
-        addedMeals,
-        removedMeals,
-        payments
-      };
-      
-      console.log('Sending update payload:', updatePayload);
-      console.log('Changes detected:', {
-        hasTicketChanges,
-        hasMealChanges,
-        hasPaymentChanges,
-        totalChanges: addedTickets.length + removedTickets.length + addedMeals.length + removedMeals.length
-      });
-      
-      // Show loading notification
-      const loadingToast = notify.info('Updating order...', { autoClose: false });
-      
-      // Send the update request
-      const response = await axios.put(
-        `${baseUrl}/api/orders/update`,
-        updatePayload,
-        { 
-          headers: { Authorization: `Bearer ${token}` },
-          timeout: 30000 // 30 second timeout
-        }
-      );
-      
-      console.log('Update response:', response.data);
-      
-      // Dismiss loading toast
-      notify.dismiss(loadingToast);
-      
-      // Close dialog and show success message
+
+      notify.success('Order updated successfully');
       handleCloseEditDialog();
-      notify.success(`✅ Order #${selectedOrder.order_id} updated successfully`);
-      
-      // Refresh orders list
-      await fetchOrders();
-      
+      fetchOrders(); // Refresh orders
     } catch (error) {
-      console.error('Error updating order:', error.response?.data || error);
-      
-      // Enhanced error handling with specific messages
-      let errorMessage = 'Failed to update order';
-      
-      if (error.response?.status === 400) {
-        errorMessage = error.response.data?.message || 'Invalid order data provided';
-      } else if (error.response?.status === 404) {
-        errorMessage = 'Order not found - it may have been deleted';
-      } else if (error.response?.status === 403) {
-        errorMessage = 'You do not have permission to edit this order';
-      } else if (error.response?.status === 409) {
-        errorMessage = 'Order has been modified by another user. Please refresh and try again.';
-      } else if (error.code === 'ECONNABORTED') {
-        errorMessage = 'Request timed out. Please check your connection and try again.';
-      } else if (error.response?.data?.message) {
-        errorMessage = error.response.data.message;
-      }
-      
-      notify.error(`❌ ${errorMessage}`);
+      console.error('Error updating order:', error);
+      notify.error(error.message || 'Failed to update order');
     } finally {
       setLoading(false);
     }

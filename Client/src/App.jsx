@@ -13,34 +13,116 @@ import AccountantScan from "./components/AccountantScan";
 import AccountantCategories from "./components/AccountantCategories";
 import AccountantMeals from "./components/AccountantMeals";
 import AccountantSelling from "./components/AccountantSelling";
-import CreditManagement from "./components/CreditManagement"; // UPDATED: Import as component
+import CreditManagement from "./components/CreditManagement";
 import UserRegistration from "./components/UserRegistration";
+import ProtectedRoute from "./components/ProtectedRoute";
+import { AuthProvider } from "./contexts/AuthContext"; // ✅ Add this import
 import { ToastContainer } from 'react-toastify';
 import 'react-toastify/dist/ReactToastify.css';
 import "./App.css";
 
 function App() {
   return (
-    <>
+    <AuthProvider> {/* ✅ Wrap everything with AuthProvider */}
       <Router>
         <Routes>
+          {/* Public route */}
           <Route path="/" element={<Login />} />
-          <Route path="/admin" element={<AdminDashboard />} />
 
-          {/* Accountant Dashboard with Nested Routes */}
-          <Route path="/accountant" element={<AccountantDashboard />}>
-            <Route path="accountant-reports" element={<AccountantReports />} />
-            <Route path="accountant-scan" element={<AccountantScan />} />
-            <Route path="accountant-categories" element={<AccountantCategories />} />
-            <Route path="accountant-meals" element={<AccountantMeals/>} />
-            <Route path="sell-tickets" element={<AccountantSelling />} />
-            <Route path="credit-management" element={<CreditManagement />} /> {/* Credit management component */}
-            <Route path="register-user" element={<UserRegistration />} />
+          {/* Admin Dashboard - Admin only */}
+          <Route 
+            path="/admin" 
+            element={
+              <ProtectedRoute adminOnly={true}>
+                <AdminDashboard />
+              </ProtectedRoute>
+            } 
+          />
+
+          {/* Accountant Dashboard with Nested Routes - Accountant and Admin only */}
+          <Route 
+            path="/accountant" 
+            element={
+              <ProtectedRoute allowedRoles={['accountant', 'admin']}>
+                <AccountantDashboard />
+              </ProtectedRoute>
+            }
+          >
+            <Route 
+              path="accountant-reports" 
+              element={
+                <ProtectedRoute allowedRoles={['accountant', 'admin']}>
+                  <AccountantReports />
+                </ProtectedRoute>
+              } 
+            />
+            <Route 
+              path="accountant-scan" 
+              element={
+                <ProtectedRoute allowedRoles={['accountant', 'admin']}>
+                  <AccountantScan />
+                </ProtectedRoute>
+              } 
+            />
+            <Route 
+              path="accountant-categories" 
+              element={
+                <ProtectedRoute allowedRoles={['accountant', 'admin']}>
+                  <AccountantCategories />
+                </ProtectedRoute>
+              } 
+            />
+            <Route 
+              path="accountant-meals" 
+              element={
+                <ProtectedRoute allowedRoles={['accountant', 'admin']}>
+                  <AccountantMeals />
+                </ProtectedRoute>
+              } 
+            />
+            <Route 
+              path="sell-tickets" 
+              element={
+                <ProtectedRoute allowedRoles={['accountant', 'admin']}>
+                  <AccountantSelling />
+                </ProtectedRoute>
+              } 
+            />
+            <Route 
+              path="credit-management" 
+              element={
+                <ProtectedRoute allowedRoles={['accountant', 'admin']}>
+                  <CreditManagement />
+                </ProtectedRoute>
+              } 
+            />
+            <Route 
+              path="register-user" 
+              element={
+                <ProtectedRoute allowedRoles={['accountant', 'admin']}>
+                  <UserRegistration />
+                </ProtectedRoute>
+              } 
+            />
           </Route>
 
-          {/* Cashier Dashboard - Single route, no nested routes, no sidebar */}
-          <Route path="/cashier" element={<CashierDashboard />} />
-          <Route path="/cashier/*" element={<CashierDashboard />} />
+          {/* Cashier Dashboard - Cashier and Admin only */}
+          <Route 
+            path="/cashier" 
+            element={
+              <ProtectedRoute allowedRoles={['cashier', 'admin']}>
+                <CashierDashboard />
+              </ProtectedRoute>
+            } 
+          />
+          <Route 
+            path="/cashier/*" 
+            element={
+              <ProtectedRoute allowedRoles={['cashier', 'admin']}>
+                <CashierDashboard />
+              </ProtectedRoute>
+            } 
+          />
 
           {/* Redirect unknown routes to login */}
           <Route path="*" element={<Navigate to="/" />} />
@@ -59,7 +141,7 @@ function App() {
         pauseOnHover
         theme="light"
       />
-    </>
+    </AuthProvider>
   );
 }
 

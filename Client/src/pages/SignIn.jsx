@@ -16,6 +16,7 @@ import { Visibility, VisibilityOff } from "@mui/icons-material";
 // Import the Akoya logo
 import AkoyaLogo from '../assets/Akoya logo RGB-1.png';
 import { notify } from '../utils/toast';
+import { useAuth } from '../contexts/AuthContext';
 
 const SignIn = () => {
   const theme = useTheme();
@@ -34,6 +35,7 @@ const SignIn = () => {
   
   const navigate = useNavigate();
   const baseUrl = window.runtimeConfig?.apiBaseUrl;
+  const { login } = useAuth();
 
   // Handle input changes
   const handleChange = (e) => {
@@ -100,13 +102,12 @@ const SignIn = () => {
       const data = await response.json();
 
       if (data && data.role) {
-        localStorage.setItem("userRole", data.role);
-        localStorage.setItem("userName", data.name);
-        localStorage.setItem("userId", data.id);
-        
-        if (data.token) {
-          localStorage.setItem("authToken", data.token);
-        }
+        login({
+          id: data.id,
+          token: data.token,
+          role: data.role,
+          name: data.name
+        });
         
         notify.success(`Welcome back, ${data.name}!`);
         redirectToDashboard(data.role);
