@@ -20,7 +20,11 @@ import {
   CardContent,
   Grid,
   Fab,
-  Chip
+  Chip,
+  useMediaQuery,
+  useTheme,
+  Stack,
+  CardActions
 } from '@mui/material';
 import axios from 'axios';
 
@@ -33,11 +37,14 @@ import ArchiveIcon from '@mui/icons-material/Archive';
 import UnarchiveIcon from '@mui/icons-material/Unarchive';
 import RefreshIcon from '@mui/icons-material/Refresh';
 import RestaurantIcon from '@mui/icons-material/Restaurant';
-// Remove config import
-// import config from '../../../config';
+import CancelIcon from '@mui/icons-material/Cancel';
 import { notify, confirmToast } from '../utils/toast';
 
 const AdminMeals = () => {
+  const theme = useTheme();
+  const isMobile = useMediaQuery(theme.breakpoints.down('md'));
+  const isSmallMobile = useMediaQuery(theme.breakpoints.down('sm'));
+
   const [meals, setMeals] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
@@ -49,7 +56,7 @@ const AdminMeals = () => {
     name: '',
     description: '',
     price: '',
-    age_group: 'adult' // Keep the default value but will hide the input
+    age_group: 'adult'
   });
   
   // Save original meal values for comparison
@@ -67,8 +74,7 @@ const AdminMeals = () => {
     
     try {
       const token = localStorage.getItem('authToken');
-
-  const baseUrl = window.runtimeConfig?.apiBaseUrl;
+      const baseUrl = window.runtimeConfig?.apiBaseUrl;
       
       if (!token) {
         setError('Authentication required. Please log in again.');
@@ -87,8 +93,6 @@ const AdminMeals = () => {
         
         // Store original meals for comparison
         const originals = {};
-
-  const baseUrl = window.runtimeConfig?.apiBaseUrl;
         response.data.forEach(meal => {
           originals[meal.id] = { ...meal };
         });
@@ -120,8 +124,6 @@ const AdminMeals = () => {
     // Store the original value before editing
     if (!originalMeals[id]) {
       const meal = meals.find(m => m.id === id);
-
-  const baseUrl = window.runtimeConfig?.apiBaseUrl;
       if (meal) {
         setOriginalMeals(prev => ({
           ...prev,
@@ -131,6 +133,18 @@ const AdminMeals = () => {
     }
     
     setEditing({...editing, [id]: true});
+  };
+
+  // Handle canceling edit
+  const handleCancelEdit = (id) => {
+    // Restore original value
+    const originalMeal = originalMeals[id];
+    if (originalMeal) {
+      setMeals(meals.map(meal => 
+        meal.id === id ? { ...originalMeal } : meal
+      ));
+    }
+    setEditing(prev => ({ ...prev, [id]: false }));
   };
 
   // Handle edit meal price
@@ -144,13 +158,11 @@ const AdminMeals = () => {
   const handleSaveMeal = async (id) => {
     try {
       const mealToUpdate = meals.find(meal => meal.id === id);
-
       
       if (!mealToUpdate) return;
       
       // Check if anything actually changed
       const originalMeal = originalMeals[id];
-
       
       if (originalMeal && 
           parseFloat(originalMeal.price) === parseFloat(mealToUpdate.price)) {
@@ -161,8 +173,7 @@ const AdminMeals = () => {
       }
       
       const token = localStorage.getItem('authToken');
-
-  const baseUrl = window.runtimeConfig?.apiBaseUrl;
+      const baseUrl = window.runtimeConfig?.apiBaseUrl;
       
       await axios.put(
         `${baseUrl}/api/meals/edit`,
@@ -204,8 +215,7 @@ const AdminMeals = () => {
     
     try {
       const token = localStorage.getItem('authToken');
-
-  const baseUrl = window.runtimeConfig?.apiBaseUrl;
+      const baseUrl = window.runtimeConfig?.apiBaseUrl;
       
       await axios.post(
         `${baseUrl}/api/meals/add`,
@@ -242,8 +252,7 @@ const AdminMeals = () => {
   const handleToggleArchive = async (name, archived) => {
     try {
       const token = localStorage.getItem('authToken');
-
-  const baseUrl = window.runtimeConfig?.apiBaseUrl;
+      const baseUrl = window.runtimeConfig?.apiBaseUrl;
       
       await axios.patch(
         `${baseUrl}/api/meals/archive`,
@@ -271,120 +280,204 @@ const AdminMeals = () => {
   };
 
   return (
-    <Box>
+    <Box sx={{ p: { xs: 1, sm: 2, md: 3 } }}>
       {/* Header and Controls */}
       <Box sx={{ 
         display: 'flex', 
         justifyContent: 'space-between',
-        alignItems: 'center', 
+        alignItems: { xs: 'flex-start', sm: 'center' },
+        flexDirection: { xs: 'column', sm: 'row' },
+        gap: { xs: 1.5, sm: 0 },
         mb: 3 
       }}>
-        <Typography variant="h5" fontWeight="bold">
+        <Typography variant={isMobile ? "h6" : "h5"} fontWeight="bold">
           Meal Management
         </Typography>
         
-        <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
+        {/* Mobile-Friendly Controls */}
+        <Box sx={{ 
+          display: 'flex', 
+          alignItems: 'center', 
+          gap: { xs: 1, sm: 2 },
+          flexDirection: { xs: 'row', sm: 'row' }, // Keep row layout even on mobile
+          width: { xs: '100%', sm: 'auto' },
+          justifyContent: { xs: 'space-between', sm: 'flex-end' }
+        }}>
+          {/* Compact Toggle Switch */}
           <FormControlLabel
             control={
               <Switch 
                 checked={!showArchived}
                 onChange={(e) => setShowArchived(!e.target.checked)}
+                size="small" // Always small for better mobile experience
               />
             }
-            label={!showArchived ? "Active Meals" : "Archived Meals"}
+            label={
+              <Typography 
+                variant="body2" 
+                sx={{ 
+                  fontSize: { xs: '0.75rem', sm: '0.875rem' },
+                  fontWeight: 'medium'
+                }}
+              >
+                {!showArchived ? "Active" : "Archived"}
+              </Typography>
+            }
+            sx={{ 
+              margin: 0,
+              '& .MuiFormControlLabel-label': {
+                paddingLeft: { xs: 0.5, sm: 1 }
+              }
+            }}
           />
           
+          {/* Compact Refresh Button */}
           <Button
             variant="outlined"
-            startIcon={<RefreshIcon />}
+            startIcon={<RefreshIcon fontSize="small" />}
             onClick={fetchMeals}
+            size="small" // Always small for consistency
+            sx={{
+              minWidth: { xs: 'auto', sm: '100px' },
+              padding: { xs: '4px 8px', sm: '6px 16px' },
+              fontSize: { xs: '0.75rem', sm: '0.875rem' },
+              '& .MuiButton-startIcon': {
+                marginRight: { xs: 0.5, sm: 1 }
+              }
+            }}
           >
-            Refresh
+            {isSmallMobile ? '' : 'Refresh'}
           </Button>
         </Box>
       </Box>
 
-      {/* Meals Table */}
-      <Paper sx={{ width: '100%', overflow: 'hidden', borderRadius: 2, mb: 4 }}>
-        {loading ? (
-          <Box sx={{ display: 'flex', justifyContent: 'center', py: 4 }}>
-            <CircularProgress />
-          </Box>
-        ) : error ? (
-          <Box sx={{ p: 3, textAlign: 'center' }}>
-            <Typography color="error">{error}</Typography>
-            <Button
-              variant="outlined"
-              onClick={fetchMeals}
-              sx={{ mt: 2 }}
-            >
-              Retry
-            </Button>
-          </Box>
-        ) : meals.length === 0 ? (
-          <Box sx={{ p: 3, textAlign: 'center' }}>
-            <Typography>No meals found</Typography>
-          </Box>
-        ) : (
-          <TableContainer sx={{ maxHeight: 'calc(100vh - 400px)' }}>
-            <Table stickyHeader>
-              <TableHead>
-                <TableRow>
-                  <TableCell sx={{ fontWeight: 'bold' }}>Meal</TableCell>
-                  <TableCell sx={{ fontWeight: 'bold' }}>Description</TableCell>
-                  <TableCell sx={{ fontWeight: 'bold' }} align="right">Price</TableCell>
-                  <TableCell align="center">Actions</TableCell>
-                </TableRow>
-              </TableHead>
-              <TableBody>
-                {meals.map((meal) => (
-                  <TableRow 
-                    hover
-                    key={meal.id}
-                  >
-                    <TableCell>
-                      <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                        <RestaurantIcon color="primary" fontSize="small" />
-                        <Typography fontWeight="medium">{meal.name}</Typography>
+      {/* Responsive Meals Display */}
+      {loading ? (
+        <Box sx={{ display: 'flex', justifyContent: 'center', py: 4 }}>
+          <CircularProgress size={isMobile ? 24 : 32} />
+        </Box>
+      ) : error ? (
+        <Paper sx={{ p: { xs: 2, sm: 3 }, textAlign: 'center', borderRadius: 2 }}>
+          <Typography color="error" variant="body2">{error}</Typography>
+          <Button
+            variant="outlined"
+            onClick={fetchMeals}
+            sx={{ mt: 2 }}
+            size={isSmallMobile ? "small" : "medium"}
+          >
+            Retry
+          </Button>
+        </Paper>
+      ) : meals.length === 0 ? (
+        <Paper sx={{ p: { xs: 2, sm: 3 }, textAlign: 'center', borderRadius: 2 }}>
+          <Typography variant="body2">No meals found</Typography>
+        </Paper>
+      ) : (
+        <>
+          {/* Mobile Card View */}
+          {isMobile ? (
+            <Box sx={{ mb: 4 }}>
+              {meals.map((meal) => (
+                <Card key={meal.id} sx={{ 
+                  mb: 2, 
+                  borderRadius: 2,
+                  boxShadow: '0 2px 8px rgba(0,0,0,0.1)'
+                }}>
+                  <CardContent sx={{ p: { xs: 1.5, sm: 2 } }}>
+                    {/* Meal Header */}
+                    <Box sx={{ 
+                      display: 'flex', 
+                      justifyContent: 'space-between', 
+                      alignItems: 'flex-start',
+                      mb: 1.5 
+                    }}>
+                      <Box sx={{ flex: 1 }}>
+                        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 0.5 }}>
+                          <RestaurantIcon color="primary" fontSize="small" />
+                          <Typography variant="subtitle1" fontWeight="bold" noWrap>
+                            {meal.name}
+                          </Typography>
+                        </Box>
+                        <Typography variant="body2" color="text.secondary" sx={{ mb: 1 }}>
+                          {meal.description}
+                        </Typography>
                       </Box>
-                    </TableCell>
-                    <TableCell>
-                      <Typography variant="body2">{meal.description}</Typography>
-                    </TableCell>
-                    <TableCell align="right">
+                      
+                      <Chip 
+                        label={meal.archived ? 'Archived' : 'Active'}
+                        color={meal.archived ? 'default' : 'success'}
+                        size="small"
+                        variant="outlined"
+                      />
+                    </Box>
+
+                    {/* Price Section */}
+                    <Box sx={{ mb: 2 }}>
+                      <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mb: 0.5 }}>
+                        Price
+                      </Typography>
                       {editing[meal.id] ? (
                         <TextField
                           type="number"
                           value={meal.price}
                           onChange={(e) => handleEditPrice(meal.id, e.target.value)}
                           size="small"
-                          sx={{ width: '100px' }}
+                          fullWidth
                           inputProps={{ min: 0, step: 0.01 }}
+                          sx={{ maxWidth: '150px' }}
                         />
                       ) : (
-                        <Typography fontWeight="medium">{formatCurrency(meal.price)}</Typography>
+                        <Typography variant="h6" fontWeight="bold" color="success.main">
+                          {formatCurrency(meal.price)}
+                        </Typography>
                       )}
-                    </TableCell>
-                    <TableCell align="center">
-                      <Box sx={{ display: 'flex', justifyContent: 'center', gap: 1 }}>
-                        {editing[meal.id] ? (
-                          <IconButton
-                            color="primary"
-                            onClick={() => handleSaveMeal(meal.id)}
-                          >
-                            <SaveIcon />
-                          </IconButton>
-                        ) : (
-                          <IconButton
-                            color="info"
-                            onClick={() => handleStartEditing(meal.id)}
-                          >
-                            <EditIcon />
-                          </IconButton>
-                        )}
-                        
-                        <IconButton
-                          color={meal.archived ? "success" : "warning"}
+                    </Box>
+                  </CardContent>
+
+                  {/* Action Buttons */}
+                  <CardActions sx={{ 
+                    px: { xs: 1.5, sm: 2 }, 
+                    pb: { xs: 1.5, sm: 2 },
+                    pt: 0,
+                    justifyContent: 'flex-end',
+                    gap: 1
+                  }}>
+                    {editing[meal.id] ? (
+                      <>
+                        <Button
+                          variant="outlined"
+                          size="small"
+                          startIcon={<CancelIcon fontSize="small" />}
+                          onClick={() => handleCancelEdit(meal.id)}
+                          color="inherit"
+                        >
+                          Cancel
+                        </Button>
+                        <Button
+                          variant="contained"
+                          size="small"
+                          startIcon={<SaveIcon fontSize="small" />}
+                          onClick={() => handleSaveMeal(meal.id)}
+                          color="primary"
+                        >
+                          Save
+                        </Button>
+                      </>
+                    ) : (
+                      <>
+                        <Button
+                          variant="outlined"
+                          size="small"
+                          startIcon={<EditIcon fontSize="small" />}
+                          onClick={() => handleStartEditing(meal.id)}
+                          color="info"
+                        >
+                          Edit
+                        </Button>
+                        <Button
+                          variant="outlined"
+                          size="small"
+                          startIcon={meal.archived ? <UnarchiveIcon fontSize="small" /> : <ArchiveIcon fontSize="small" />}
                           onClick={() => {
                             const confirmMsg = meal.archived
                               ? `Unarchive ${meal.name}?`
@@ -394,35 +487,136 @@ const AdminMeals = () => {
                               handleToggleArchive(meal.name, !meal.archived);
                             });
                           }}
+                          color={meal.archived ? "success" : "warning"}
                         >
-                          {meal.archived ? <UnarchiveIcon /> : <ArchiveIcon />}
-                        </IconButton>
-                      </Box>
-                    </TableCell>
-                  </TableRow>
-                ))}
-              </TableBody>
-            </Table>
-          </TableContainer>
-        )}
-      </Paper>
+                          {meal.archived ? 'Unarchive' : 'Archive'}
+                        </Button>
+                      </>
+                    )}
+                  </CardActions>
+                </Card>
+              ))}
+            </Box>
+          ) : (
+            /* Desktop Table View */
+            <Paper sx={{ width: '100%', overflow: 'hidden', borderRadius: 2, mb: 4 }}>
+              <TableContainer sx={{ maxHeight: 'calc(100vh - 400px)' }}>
+                <Table stickyHeader>
+                  <TableHead>
+                    <TableRow>
+                      <TableCell sx={{ fontWeight: 'bold' }}>Meal</TableCell>
+                      <TableCell sx={{ fontWeight: 'bold' }}>Description</TableCell>
+                      <TableCell sx={{ fontWeight: 'bold' }} align="right">Price</TableCell>
+                      <TableCell align="center">Actions</TableCell>
+                    </TableRow>
+                  </TableHead>
+                  <TableBody>
+                    {meals.map((meal) => (
+                      <TableRow 
+                        hover
+                        key={meal.id}
+                      >
+                        <TableCell>
+                          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                            <RestaurantIcon color="primary" fontSize="small" />
+                            <Typography fontWeight="medium">{meal.name}</Typography>
+                            {meal.archived && (
+                              <Chip label="Archived" size="small" color="default" variant="outlined" />
+                            )}
+                          </Box>
+                        </TableCell>
+                        <TableCell>
+                          <Typography variant="body2">{meal.description}</Typography>
+                        </TableCell>
+                        <TableCell align="right">
+                          {editing[meal.id] ? (
+                            <TextField
+                              type="number"
+                              value={meal.price}
+                              onChange={(e) => handleEditPrice(meal.id, e.target.value)}
+                              size="small"
+                              sx={{ width: '100px' }}
+                              inputProps={{ min: 0, step: 0.01 }}
+                            />
+                          ) : (
+                            <Typography fontWeight="medium">{formatCurrency(meal.price)}</Typography>
+                          )}
+                        </TableCell>
+                        <TableCell align="center">
+                          <Box sx={{ display: 'flex', justifyContent: 'center', gap: 1 }}>
+                            {editing[meal.id] ? (
+                              <>
+                                <IconButton
+                                  color="inherit"
+                                  onClick={() => handleCancelEdit(meal.id)}
+                                  title="Cancel"
+                                >
+                                  <CancelIcon />
+                                </IconButton>
+                                <IconButton
+                                  color="primary"
+                                  onClick={() => handleSaveMeal(meal.id)}
+                                  title="Save"
+                                >
+                                  <SaveIcon />
+                                </IconButton>
+                              </>
+                            ) : (
+                              <>
+                                <IconButton
+                                  color="info"
+                                  onClick={() => handleStartEditing(meal.id)}
+                                  title="Edit"
+                                >
+                                  <EditIcon />
+                                </IconButton>
+                                
+                                <IconButton
+                                  color={meal.archived ? "success" : "warning"}
+                                  onClick={() => {
+                                    const confirmMsg = meal.archived
+                                      ? `Unarchive ${meal.name}?`
+                                      : `Archive ${meal.name}?`;
+                                    
+                                    confirmToast(confirmMsg, () => {
+                                      handleToggleArchive(meal.name, !meal.archived);
+                                    });
+                                  }}
+                                  title={meal.archived ? "Unarchive" : "Archive"}
+                                >
+                                  {meal.archived ? <UnarchiveIcon /> : <ArchiveIcon />}
+                                </IconButton>
+                              </>
+                            )}
+                          </Box>
+                        </TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              </TableContainer>
+            </Paper>
+          )}
+        </>
+      )}
 
       {/* Add New Meal Section */}
-      <Paper sx={{ p: 3, borderRadius: 2 }}>
-        <Typography variant="h6" fontWeight="bold" mb={2}>
+      <Paper sx={{ p: { xs: 2, sm: 3 }, borderRadius: 2 }}>
+        <Typography variant={isMobile ? "subtitle1" : "h6"} fontWeight="bold" mb={2}>
           Add New Meal
         </Typography>
         
         <Grid container spacing={2}>
-          <Grid item xs={12} md={6}>
+          <Grid item xs={12} sm={6}>
             <TextField
               label="Meal Name"
               fullWidth
               value={newMeal.name}
               onChange={(e) => handleMealFormChange('name', e.target.value)}
+              size={isSmallMobile ? "small" : "medium"}
             />
           </Grid>
-          <Grid item xs={12} md={6}>
+          <Grid item xs={12} sm={6}>
             <TextField
               label="Price"
               fullWidth
@@ -430,6 +624,7 @@ const AdminMeals = () => {
               value={newMeal.price}
               onChange={(e) => handleMealFormChange('price', e.target.value)}
               inputProps={{ min: 0, step: 0.01 }}
+              size={isSmallMobile ? "small" : "medium"}
             />
           </Grid>
           <Grid item xs={12}>
@@ -437,16 +632,19 @@ const AdminMeals = () => {
               label="Description"
               fullWidth
               multiline
-              rows={2}
+              rows={isSmallMobile ? 2 : 3}
               value={newMeal.description}
               onChange={(e) => handleMealFormChange('description', e.target.value)}
+              size={isSmallMobile ? "small" : "medium"}
             />
           </Grid>
           <Grid item xs={12}>
             <Button
               variant="contained"
-              startIcon={<AddIcon />}
+              startIcon={<AddIcon fontSize={isSmallMobile ? "small" : "medium"} />}
               onClick={handleAddMeal}
+              size={isSmallMobile ? "small" : "medium"}
+              fullWidth={isSmallMobile}
             >
               Add Meal
             </Button>

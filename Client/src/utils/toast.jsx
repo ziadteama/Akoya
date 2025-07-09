@@ -7,26 +7,36 @@ export const notify = {
   /**
    * Display a success toast
    * @param {string} message - Message to display
+   * @param {object} options - Toast options
    */
-  success: (message) => toast.success(message),
+  success: (message, options) => toast.success(message, options),
 
   /**
    * Display an error toast
    * @param {string} message - Message to display
+   * @param {object} options - Toast options
    */
-  error: (message) => toast.error(message),
+  error: (message, options) => toast.error(message, options),
 
   /**
    * Display an info toast
    * @param {string} message - Message to display
+   * @param {object} options - Toast options
    */
-  info: (message) => toast.info(message),
+  info: (message, options) => toast.info(message, options),
 
   /**
    * Display a warning toast
    * @param {string} message - Message to display
+   * @param {object} options - Toast options
    */
-  warning: (message) => toast.warning(message)
+  warning: (message, options) => toast.warning(message, options),
+
+  /**
+   * Dismiss a specific toast or all toasts
+   * @param {string|number} toastId - Optional toast ID to dismiss specific toast
+   */
+  dismiss: (toastId) => toast.dismiss(toastId)
 };
 
 /**
@@ -40,7 +50,7 @@ export const confirmToast = (message, onConfirm, onCancel) => {
     <div>
       <p>{message}</p>
       <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: '10px' }}>
-        <button 
+        <button
           onClick={() => {
             toast.dismiss();
             onConfirm && onConfirm();
@@ -56,7 +66,7 @@ export const confirmToast = (message, onConfirm, onCancel) => {
         >
           Confirm
         </button>
-        <button 
+        <button
           onClick={() => {
             toast.dismiss();
             onCancel && onCancel();

@@ -1,6 +1,4 @@
-﻿// Replace the entire AdminReports.jsx with this updated version:
-
-import React, { useState, useEffect } from "react";
+﻿import React, { useState, useEffect } from "react";
 import {
   Paper,
   Typography,
@@ -16,7 +14,13 @@ import {
   Card,
   CardContent,
   Tab,
-  Tabs
+  Tabs,
+  useMediaQuery,
+  useTheme,
+  Stack,
+  TextField,
+  InputAdornment,
+  Collapse
 } from "@mui/material";
 import { LocalizationProvider, DatePicker } from "@mui/x-date-pickers";
 import { AdapterDayjs } from "@mui/x-date-pickers/AdapterDayjs";
@@ -36,6 +40,8 @@ import LocalOfferIcon from '@mui/icons-material/LocalOffer';
 import ShoppingCartIcon from '@mui/icons-material/ShoppingCart';
 import CategoryIcon from '@mui/icons-material/Category';
 import CreditCardIcon from '@mui/icons-material/CreditCard';
+import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
+import ExpandLessIcon from '@mui/icons-material/ExpandLess';
 
 // Import components
 import OrdersTable from "./OrdersTable";
@@ -43,6 +49,10 @@ import CategorySalesReport from "./CategorySalesReport";
 import CreditReport from "./CreditReport";
 
 const AdminReports = () => {
+  const theme = useTheme();
+  const isMobile = useMediaQuery(theme.breakpoints.down('md'));
+  const isSmallMobile = useMediaQuery(theme.breakpoints.down('sm'));
+
   const [selectedDate, setSelectedDate] = useState(dayjs());
   const [fromDate, setFromDate] = useState(dayjs().subtract(7, 'day'));
   const [toDate, setToDate] = useState(dayjs());
@@ -52,6 +62,10 @@ const AdminReports = () => {
   
   // Tab management
   const [currentTab, setCurrentTab] = useState(0);
+  
+  // Date filter menu
+  const [dateRange, setDateRange] = useState('week');
+  const [filterMenuOpen, setFilterMenuOpen] = useState(false);
   
   // Orders data
   const [reportData, setReportData] = useState([]);
@@ -73,6 +87,48 @@ const AdminReports = () => {
   // Format date for API calls
   const formatApiDate = (date) => date.format("YYYY-MM-DD");
   const formatDisplayDate = (date) => date.format("MMM DD, YYYY");
+
+  // Handle date range filtering
+  const handleDateRangeChange = (range) => {
+    setDateRange(range);
+    
+    const today = dayjs();
+    
+    switch (range) {
+      case 'today':
+        setFromDate(today.startOf('day'));
+        setToDate(today);
+        setUseRange(false);
+        setSelectedDate(today);
+        break;
+      case 'yesterday':
+        const yesterday = today.subtract(1, 'day');
+        setFromDate(yesterday.startOf('day'));
+        setToDate(yesterday.endOf('day'));
+        setUseRange(false);
+        setSelectedDate(yesterday);
+        break;
+      case 'week':
+        setFromDate(today.subtract(7, 'day'));
+        setToDate(today);
+        setUseRange(true);
+        break;
+      case 'month':
+        setFromDate(today.subtract(30, 'day'));
+        setToDate(today);
+        setUseRange(true);
+        break;
+      case 'quarter':
+        setFromDate(today.subtract(90, 'day'));
+        setToDate(today);
+        setUseRange(true);
+        break;
+      default:
+        setFromDate(today.subtract(7, 'day'));
+        setToDate(today);
+        setUseRange(true);
+    }
+  };
 
   // Fetch orders report
   const fetchOrdersReport = async () => {
@@ -165,6 +221,33 @@ const AdminReports = () => {
     }
   };
 
+  // Handle from date change
+  const handleFromDateChange = (newValue) => {
+    if (newValue) {
+      setFromDate(newValue);
+      if (newValue.isAfter(toDate)) {
+        setToDate(newValue);
+      }
+    }
+  };
+  
+  // Handle to date change
+  const handleToDateChange = (newValue) => {
+    if (newValue) {
+      setToDate(newValue);
+      if (fromDate.isAfter(newValue)) {
+        setFromDate(newValue);
+      }
+    }
+  };
+
+  // Handle single date change
+  const handleSelectedDateChange = (newValue) => {
+    if (newValue) {
+      setSelectedDate(newValue);
+    }
+  };
+
   // Fetch data on date changes
   useEffect(() => {
     if (currentTab === 0) {
@@ -251,24 +334,6 @@ const AdminReports = () => {
     saveAs(blob, filename);
   };
 
-  const handleFromDateChange = (newVal) => {
-    if (newVal) {
-      setFromDate(newVal);
-      if (newVal.isAfter(toDate)) {
-        setToDate(newVal);
-      }
-    }
-  };
-  
-  const handleToDateChange = (newVal) => {
-    if (newVal) {
-      setToDate(newVal);
-      if (fromDate.isAfter(newVal)) {
-        setFromDate(newVal);
-      }
-    }
-  };
-
   const calculateSummary = (reportItems) => {
     const totalRevenue = reportItems.reduce((sum, row) => 
       sum + (Number(row.total_amount) || 0), 0);
@@ -292,115 +357,202 @@ const AdminReports = () => {
     return { totalTickets, totalRevenue, totalDiscounts };
   };
 
+  const getResultsText = () => {
+    if (currentTab === 0) {
+      return `${reportData.length} orders`;
+    } else if (currentTab === 1) {
+      return categorySalesData?.categories?.length ? `${categorySalesData.categories.length} categories` : '0 categories';
+    } else if (currentTab === 2) {
+      return creditReportData?.length ? `${creditReportData.length} records` : '0 records';
+    }
+    return '';
+  };
+
   return (
     <LocalizationProvider dateAdapter={AdapterDayjs}>
-      <Box>
-        {/* Header and Controls */}
-        <Box sx={{ 
-          display: 'flex', 
-          justifyContent: 'space-between',
-          alignItems: 'center', 
-          mb: 3 
-        }}>
-          <Typography variant="h5" fontWeight="bold">
+      <Box sx={{ p: { xs: 1, sm: 2, md: 3 } }}>
+        {/* Compact Mobile Header - Same style as OrdersManagement */}
+        <Box sx={{ mb: 2 }}>
+          <Typography variant={isMobile ? "h6" : "h4"} fontWeight="bold" sx={{ mb: 1 }}>
             📊 Admin Reports
           </Typography>
           
-          <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
-            <FormControlLabel
-              control={
-                <Switch 
-                  checked={useRange} 
-                  onChange={(e) => setUseRange(e.target.checked)}
-                />
-              }
-              label={useRange ? "Date Range" : "Single Date"}
-            />
-            
+          {/* Collapsible Date Filter Button - Same style */}
+          <Box>
             <Button
+              size="small"
+              onClick={() => setFilterMenuOpen(!filterMenuOpen)}
+              endIcon={filterMenuOpen ? <ExpandLessIcon /> : <ExpandMoreIcon />}
+              sx={{ mb: 1, textTransform: 'none', fontSize: '0.8rem' }}
+              startIcon={<DateRangeIcon />}
               variant="outlined"
-              startIcon={<RefreshIcon />}
-              onClick={handleRefresh}
+              fullWidth
             >
-              Refresh
+              {useRange ? 
+                `${fromDate.format('MMM DD')} - ${toDate.format('MMM DD')}` :
+                selectedDate.format('MMM DD, YYYY')
+              } ({getResultsText()})
             </Button>
             
-            {currentTab === 0 && (
-              <Button
-                variant="contained"
-                startIcon={<FileDownloadIcon />}
-                disabled={reportData.length === 0 || loading}
-                onClick={exportOrdersCSV}
-              >
-                Export CSV
-              </Button>
-            )}
+            <Collapse in={filterMenuOpen}>
+              <Box sx={{ p: 1, bgcolor: 'grey.50', borderRadius: 1, mb: 1 }}>
+                {/* Date Range Switch */}
+                <FormControlLabel
+                  control={
+                    <Switch 
+                      checked={useRange} 
+                      onChange={(e) => setUseRange(e.target.checked)}
+                      size="small"
+                    />
+                  }
+                  label={
+                    <Typography sx={{ fontSize: '0.75rem' }}>
+                      {useRange ? "Date Range" : "Single Date"}
+                    </Typography>
+                  }
+                  sx={{ mb: 1, ml: 0 }}
+                />
+
+                {/* Compact Date Pickers */}
+                {useRange ? (
+                  <Stack direction="row" spacing={1} sx={{ mb: 1 }}>
+                    <DatePicker
+                      label="From"
+                      value={fromDate}
+                      onChange={handleFromDateChange}
+                      slotProps={{ 
+                        textField: { 
+                          size: 'small',
+                          sx: { flex: 1 }
+                        } 
+                      }}
+                    />
+                    <DatePicker
+                      label="To"
+                      value={toDate}
+                      onChange={handleToDateChange}
+                      slotProps={{ 
+                        textField: { 
+                          size: 'small',
+                          sx: { flex: 1 }
+                        } 
+                      }}
+                    />
+                  </Stack>
+                ) : (
+                  <DatePicker
+                    label="Date"
+                    value={selectedDate}
+                    onChange={handleSelectedDateChange}
+                    slotProps={{ 
+                      textField: { 
+                        size: 'small',
+                        fullWidth: true,
+                        sx: { mb: 1 }
+                      } 
+                    }}
+                  />
+                )}
+
+                {/* Compact Quick Date Buttons */}
+                <Grid container spacing={0.5}>
+                  {[
+                    { key: 'today', label: 'Today' },
+                    { key: 'yesterday', label: 'Yesterday' },
+                    { key: 'week', label: '7 Days' },
+                    { key: 'month', label: '30 Days' },
+                    { key: 'quarter', label: '90 Days' }
+                  ].map(({ key, label }) => (
+                    <Grid item xs={6} sm={4} key={key}>
+                      <Button 
+                        variant={dateRange === key ? 'contained' : 'outlined'}
+                        size="small"
+                        onClick={() => handleDateRangeChange(key)}
+                        fullWidth
+                        sx={{ 
+                          fontSize: '0.7rem',
+                          minHeight: 'auto',
+                          py: 0.5
+                        }}
+                      >
+                        {label}
+                      </Button>
+                    </Grid>
+                  ))}
+                </Grid>
+
+                {/* Action Buttons */}
+                <Stack direction="row" spacing={1} sx={{ mt: 1 }}>
+                  <IconButton
+                    onClick={handleRefresh}
+                    size="small"
+                    sx={{ 
+                      bgcolor: 'rgba(0, 174, 239, 0.1)',
+                      '&:hover': { bgcolor: 'rgba(0, 174, 239, 0.2)' },
+                      flex: 1
+                    }}
+                    title="Refresh"
+                  >
+                    <RefreshIcon fontSize="small" sx={{ color: '#00AEEF' }} />
+                  </IconButton>
+                  
+                  {currentTab === 0 && (
+                    <IconButton
+                      disabled={reportData.length === 0 || loading}
+                      onClick={exportOrdersCSV}
+                      size="small"
+                      sx={{ 
+                        bgcolor: 'rgba(76, 175, 80, 0.1)',
+                        '&:hover': { bgcolor: 'rgba(76, 175, 80, 0.2)' },
+                        '&:disabled': { bgcolor: 'rgba(0, 0, 0, 0.04)' },
+                        flex: 1
+                      }}
+                      title="Export CSV"
+                    >
+                      <FileDownloadIcon fontSize="small" sx={{ color: '#4CAF50' }} />
+                    </IconButton>
+                  )}
+                </Stack>
+              </Box>
+            </Collapse>
           </Box>
         </Box>
 
-        {/* Date Selection */}
-        <Paper sx={{ p: 3, mb: 3, borderRadius: 2 }}>
-          <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
-            {useRange ? (
-              <>
-                <Box sx={{ display: 'flex', alignItems: 'center' }}>
-                  <DateRangeIcon sx={{ color: 'primary.main', mr: 1 }} />
-                  <Typography variant="subtitle1" fontWeight="medium">
-                    Date Range:
-                  </Typography>
-                </Box>
-                <DatePicker 
-                  label="From" 
-                  value={fromDate} 
-                  onChange={handleFromDateChange}
-                  slotProps={{ textField: { size: 'small' } }}
-                />
-                <DatePicker 
-                  label="To" 
-                  value={toDate} 
-                  onChange={handleToDateChange}
-                  slotProps={{ textField: { size: 'small' } }} 
-                />
-              </>
-            ) : (
-              <>
-                <Box sx={{ display: 'flex', alignItems: 'center' }}>
-                  <CalendarTodayIcon sx={{ color: 'primary.main', mr: 1 }} />
-                  <Typography variant="subtitle1" fontWeight="medium">
-                    Select Date:
-                  </Typography>
-                </Box>
-                <DatePicker 
-                  value={selectedDate} 
-                  onChange={(newVal) => newVal && setSelectedDate(newVal)} 
-                  slotProps={{ textField: { size: 'small' } }}
-                />
-              </>
-            )}
-          </Box>
-        </Paper>
-
-        {/* Navigation Tabs */}
-        <Paper sx={{ mb: 3, borderRadius: 2 }}>
+        {/* Compact Navigation Tabs */}
+        <Paper sx={{ mb: 2, borderRadius: 2 }}>
           <Tabs 
             value={currentTab} 
             onChange={handleTabChange}
-            sx={{ borderBottom: 1, borderColor: 'divider' }}
+            variant={isMobile ? "scrollable" : "standard"}
+            scrollButtons={isMobile ? "auto" : false}
+            allowScrollButtonsMobile={isMobile}
+            sx={{ 
+              minHeight: { xs: 40, sm: 48 },
+              '& .MuiTab-root': {
+                minHeight: { xs: 40, sm: 48 },
+                fontSize: { xs: '0.75rem', sm: '0.875rem' },
+                textTransform: 'none',
+                padding: { xs: '4px 8px', sm: '8px 12px' },
+                '& .MuiSvgIcon-root': {
+                  fontSize: { xs: '1rem', sm: '1.25rem' }
+                }
+              }
+            }}
           >
             <Tab 
               icon={<ShoppingCartIcon />} 
-              label="Orders Report" 
-              sx={{ minHeight: 72, textTransform: 'none' }}
+              label={isSmallMobile ? "Orders" : "Orders Report"}
+              iconPosition="start"
             />
             <Tab 
               icon={<CategoryIcon />} 
-              label="Category Sales" 
-              sx={{ minHeight: 72, textTransform: 'none' }}
+              label={isSmallMobile ? "Sales" : "Category Sales"}
+              iconPosition="start"
             />
             <Tab 
               icon={<CreditCardIcon />} 
-              label="Credit Report" 
-              sx={{ minHeight: 72, textTransform: 'none' }}
+              label={isSmallMobile ? "Credit" : "Credit Report"}
+              iconPosition="start"
             />
           </Tabs>
         </Paper>
@@ -408,74 +560,186 @@ const AdminReports = () => {
         {/* Tab Content */}
         {currentTab === 0 && (
           <>
-            {/* Summary Cards for Orders */}
-            <Grid container spacing={3} sx={{ mb: 3 }}>
-              <Grid item xs={12} md={3}>
-                <Card sx={{ height: '100%', borderRadius: 2, boxShadow: '0 4px 12px rgba(0,0,0,0.1)' }}>
-                  <CardContent>
-                    <Box sx={{ display: 'flex', alignItems: 'center', mb: 2 }}>
-                      <Box sx={{ backgroundColor: '#e3f2fd', borderRadius: '50%', p: 1, mr: 2 }}>
-                        <ReceiptIcon sx={{ color: '#2196f3' }} />
+            {/* Compact Summary Cards for Orders */}
+            <Grid container spacing={{ xs: 1, sm: 2 }} sx={{ mb: 2 }}>
+              <Grid item xs={6} sm={3}>
+                <Card sx={{ 
+                  borderRadius: 2, 
+                  boxShadow: '0 2px 8px rgba(0,0,0,0.1)',
+                  height: '100%'
+                }}>
+                  <CardContent sx={{ p: { xs: 1, sm: 1.5 } }}>
+                    <Box sx={{ 
+                      display: 'flex', 
+                      alignItems: 'center', 
+                      mb: 0.5
+                    }}>
+                      <Box sx={{ 
+                        backgroundColor: '#e3f2fd', 
+                        borderRadius: '50%', 
+                        p: 0.5, 
+                        mr: 1
+                      }}>
+                        <ReceiptIcon sx={{ 
+                          color: '#2196f3',
+                          fontSize: { xs: '1rem', sm: '1.25rem' }
+                        }} />
                       </Box>
-                      <Typography variant="subtitle1" color="text.secondary">
-                        Total Orders
+                      <Typography 
+                        variant="caption"
+                        color="text.secondary"
+                        sx={{ fontSize: { xs: '0.65rem', sm: '0.75rem' } }}
+                      >
+                        Orders
                       </Typography>
                     </Box>
-                    <Typography variant="h4" fontWeight="bold">
+                    <Typography 
+                      variant={isSmallMobile ? "h6" : "h5"}
+                      fontWeight="bold"
+                      sx={{ fontSize: { xs: '1.1rem', sm: '1.5rem' } }}
+                    >
                       {summary.totalOrders}
                     </Typography>
                   </CardContent>
                 </Card>
               </Grid>
               
-              <Grid item xs={12} md={3}>
-                <Card sx={{ height: '100%', borderRadius: 2, boxShadow: '0 4px 12px rgba(0,0,0,0.1)' }}>
-                  <CardContent>
-                    <Box sx={{ display: 'flex', alignItems: 'center', mb: 2 }}>
-                      <Box sx={{ backgroundColor: '#e8f5e9', borderRadius: '50%', p: 1, mr: 2 }}>
-                        <AttachMoneyIcon sx={{ color: '#4caf50' }} />
+              <Grid item xs={6} sm={3}>
+                <Card sx={{ 
+                  borderRadius: 2, 
+                  boxShadow: '0 2px 8px rgba(0,0,0,0.1)',
+                  height: '100%'
+                }}>
+                  <CardContent sx={{ p: { xs: 1, sm: 1.5 } }}>
+                    <Box sx={{ 
+                      display: 'flex', 
+                      alignItems: 'center', 
+                      mb: 0.5
+                    }}>
+                      <Box sx={{ 
+                        backgroundColor: '#e8f5e9', 
+                        borderRadius: '50%', 
+                        p: 0.5, 
+                        mr: 1
+                      }}>
+                        <AttachMoneyIcon sx={{ 
+                          color: '#4caf50',
+                          fontSize: { xs: '1rem', sm: '1.25rem' }
+                        }} />
                       </Box>
-                      <Typography variant="subtitle1" color="text.secondary">
-                        Total Revenue
+                      <Typography 
+                        variant="caption"
+                        color="text.secondary"
+                        sx={{ fontSize: { xs: '0.65rem', sm: '0.75rem' } }}
+                      >
+                        Revenue
                       </Typography>
                     </Box>
-                    <Typography variant="h4" fontWeight="bold">
-                      EGP {summary.totalRevenue.toFixed(2)}
+                    <Typography 
+                      variant={isSmallMobile ? "subtitle2" : "h5"}
+                      fontWeight="bold"
+                      sx={{ fontSize: { xs: '0.9rem', sm: '1.5rem' } }}
+                    >
+                      {isSmallMobile ? 
+                        `${summary.totalRevenue.toFixed(0)}` : 
+                        `EGP ${summary.totalRevenue.toFixed(2)}`
+                      }
                     </Typography>
+                    {isSmallMobile && (
+                      <Typography variant="caption" color="text.secondary" sx={{ fontSize: '0.6rem' }}>
+                        EGP
+                      </Typography>
+                    )}
                   </CardContent>
                 </Card>
               </Grid>
               
-              <Grid item xs={12} md={3}>
-                <Card sx={{ height: '100%', borderRadius: 2, boxShadow: '0 4px 12px rgba(0,0,0,0.1)' }}>
-                  <CardContent>
-                    <Box sx={{ display: 'flex', alignItems: 'center', mb: 2 }}>
-                      <Box sx={{ backgroundColor: '#fff8e1', borderRadius: '50%', p: 1, mr: 2 }}>
-                        <LocalOfferIcon sx={{ color: '#ff9800' }} />
+              <Grid item xs={6} sm={3}>
+                <Card sx={{ 
+                  borderRadius: 2, 
+                  boxShadow: '0 2px 8px rgba(0,0,0,0.1)',
+                  height: '100%'
+                }}>
+                  <CardContent sx={{ p: { xs: 1, sm: 1.5 } }}>
+                    <Box sx={{ 
+                      display: 'flex', 
+                      alignItems: 'center', 
+                      mb: 0.5
+                    }}>
+                      <Box sx={{ 
+                        backgroundColor: '#fff8e1', 
+                        borderRadius: '50%', 
+                        p: 0.5, 
+                        mr: 1
+                      }}>
+                        <LocalOfferIcon sx={{ 
+                          color: '#ff9800',
+                          fontSize: { xs: '1rem', sm: '1.25rem' }
+                        }} />
                       </Box>
-                      <Typography variant="subtitle1" color="text.secondary">
-                        Total Discounts
+                      <Typography 
+                        variant="caption"
+                        color="text.secondary"
+                        sx={{ fontSize: { xs: '0.65rem', sm: '0.75rem' } }}
+                      >
+                        Discounts
                       </Typography>
                     </Box>
-                    <Typography variant="h4" fontWeight="bold">
-                      EGP {summary.totalDiscounts.toFixed(2)}
+                    <Typography 
+                      variant={isSmallMobile ? "subtitle2" : "h5"}
+                      fontWeight="bold"
+                      sx={{ fontSize: { xs: '0.9rem', sm: '1.5rem' } }}
+                    >
+                      {isSmallMobile ? 
+                        `${summary.totalDiscounts.toFixed(0)}` : 
+                        `EGP ${summary.totalDiscounts.toFixed(2)}`
+                      }
                     </Typography>
+                    {isSmallMobile && (
+                      <Typography variant="caption" color="text.secondary" sx={{ fontSize: '0.6rem' }}>
+                        EGP
+                      </Typography>
+                    )}
                   </CardContent>
                 </Card>
               </Grid>
               
-              <Grid item xs={12} md={3}>
-                <Card sx={{ height: '100%', borderRadius: 2, boxShadow: '0 4px 12px rgba(0,0,0,0.1)' }}>
-                  <CardContent>
-                    <Box sx={{ display: 'flex', alignItems: 'center', mb: 2 }}>
-                      <Box sx={{ backgroundColor: '#e1f5fe', borderRadius: '50%', p: 1, mr: 2 }}>
-                        <ConfirmationNumberIcon sx={{ color: '#03a9f4' }} />
+              <Grid item xs={6} sm={3}>
+                <Card sx={{ 
+                  borderRadius: 2, 
+                  boxShadow: '0 2px 8px rgba(0,0,0,0.1)',
+                  height: '100%'
+                }}>
+                  <CardContent sx={{ p: { xs: 1, sm: 1.5 } }}>
+                    <Box sx={{ 
+                      display: 'flex', 
+                      alignItems: 'center', 
+                      mb: 0.5
+                    }}>
+                      <Box sx={{ 
+                        backgroundColor: '#e1f5fe', 
+                        borderRadius: '50%', 
+                        p: 0.5, 
+                        mr: 1
+                      }}>
+                        <ConfirmationNumberIcon sx={{ 
+                          color: '#03a9f4',
+                          fontSize: { xs: '1rem', sm: '1.25rem' }
+                        }} />
                       </Box>
-                      <Typography variant="subtitle1" color="text.secondary">
-                        Tickets Sold
+                      <Typography 
+                        variant="caption"
+                        color="text.secondary"
+                        sx={{ fontSize: { xs: '0.65rem', sm: '0.75rem' } }}
+                      >
+                        Tickets
                       </Typography>
                     </Box>
-                    <Typography variant="h4" fontWeight="bold">
+                    <Typography 
+                      variant={isSmallMobile ? "h6" : "h5"}
+                      fontWeight="bold"
+                      sx={{ fontSize: { xs: '1.1rem', sm: '1.5rem' } }}
+                    >
                       {summary.totalTickets}
                     </Typography>
                   </CardContent>
@@ -483,37 +747,77 @@ const AdminReports = () => {
               </Grid>
             </Grid>
 
-            {/* Orders Table */}
+            {/* Compact Orders Table Container */}
             <Paper sx={{ 
               width: '100%', 
               borderRadius: 2, 
               overflow: 'hidden',
-              boxShadow: '0 4px 12px rgba(0,0,0,0.08)',
+              boxShadow: '0 2px 8px rgba(0,0,0,0.08)',
             }}>
-              <Box sx={{ p: 2, borderBottom: '1px solid #f0f0f0', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                <Typography variant="h6" fontWeight="bold">
+              <Box sx={{ 
+                p: { xs: 1, sm: 1.5 }, 
+                borderBottom: '1px solid #f0f0f0', 
+                display: 'flex', 
+                justifyContent: 'space-between', 
+                alignItems: 'center'
+              }}>
+                <Typography 
+                  variant="subtitle1"
+                  fontWeight="bold"
+                  sx={{ fontSize: { xs: '0.875rem', sm: '1rem' } }}
+                >
                   🛒 Orders List
                 </Typography>
-                <Chip label={`${reportData.length} orders`} size="small" color="primary" variant="outlined" />
+                <Chip 
+                  label={`${reportData.length} orders`} 
+                  size="small"
+                  color="primary" 
+                  variant="outlined" 
+                />
               </Box>
               
-              <Box sx={{ height: 'calc(100vh - 500px)', position: 'relative', minHeight: '400px' }}>
+              <Box sx={{ 
+                height: { xs: 'calc(100vh - 420px)', sm: 'calc(100vh - 450px)' },
+                position: 'relative', 
+                minHeight: { xs: '250px', sm: '300px' }
+              }}>
                 {loading ? (
                   <Box sx={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '100%' }}>
-                    <CircularProgress />
+                    <CircularProgress size={isMobile ? 32 : 40} />
                   </Box>
                 ) : error ? (
-                  <Box sx={{ p: 4, textAlign: 'center', height: '100%', display: 'flex', flexDirection: 'column', justifyContent: 'center' }}>
-                    <Typography color="error" variant="body1" gutterBottom>
+                  <Box sx={{ 
+                    p: { xs: 2, sm: 3 }, 
+                    textAlign: 'center', 
+                    height: '100%', 
+                    display: 'flex', 
+                    flexDirection: 'column', 
+                    justifyContent: 'center' 
+                  }}>
+                    <Typography 
+                      color="error" 
+                      variant={isSmallMobile ? "body2" : "body1"}
+                      gutterBottom
+                    >
                       {error}
                     </Typography>
-                    <Button variant="contained" onClick={handleRefresh} sx={{ mt: 2, alignSelf: 'center' }}>
+                    <Button 
+                      variant="contained" 
+                      onClick={handleRefresh} 
+                      sx={{ mt: 2, alignSelf: 'center' }}
+                      size="small"
+                    >
                       Try Again
                     </Button>
                   </Box>
                 ) : reportData.length === 0 ? (
                   <Box sx={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '100%' }}>
-                    <Typography color="text.secondary">
+                    <Typography 
+                      color="text.secondary"
+                      variant="body2"
+                      textAlign="center"
+                      sx={{ px: 2 }}
+                    >
                       No orders found for the selected period
                     </Typography>
                   </Box>
