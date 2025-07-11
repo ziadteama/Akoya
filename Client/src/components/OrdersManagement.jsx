@@ -241,7 +241,7 @@ const OrdersManagement = () => {
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [orderToDelete, setOrderToDelete] = useState(null);
 
-  // const baseUrl = window.runtimeConfig?.apiBaseUrl;
+  const baseUrl = window.runtimeConfig?.apiBaseUrl;
 
   // Update rows per page when screen size changes
   useEffect(() => {
@@ -276,16 +276,28 @@ const OrdersManagement = () => {
   
   // Fetch orders from API
   const fetchOrders = async () => {
+    if (!user || !isAdmin() || !baseUrl) return;
+
     try {
       setLoading(true);
       setError('');
       
-      // Use the secure API client
-      const data = await apiClient.get('/api/orders');
-      setOrders(data);
+      const token = localStorage.getItem('authToken');
+      if (!token) return;
+
+      // Use the range-report endpoint that exists in your server
+      const response = await axios.get(`${baseUrl}/api/orders/range-report`, {
+        headers: { Authorization: `Bearer ${token}` },
+        params: {
+          startDate: fromDate.format('YYYY-MM-DD'),
+          endDate: toDate.format('YYYY-MM-DD')
+        }
+      });
+      
+      setOrders(Array.isArray(response.data) ? response.data : []);
     } catch (error) {
       console.error('Error fetching orders:', error);
-      setError(error.message || 'Failed to fetch orders');
+      setError(error.response?.data?.message || 'Failed to fetch orders');
     } finally {
       setLoading(false);
     }
@@ -293,31 +305,17 @@ const OrdersManagement = () => {
 
   // Fetch ticket types for adding tickets to order
   const fetchTicketTypes = async () => {
-    if (!user || !isAdmin()) return;
+    if (!user || !isAdmin() || !baseUrl) return;
 
     try {
       const token = localStorage.getItem('authToken');
-      
       if (!token) return;
       
-      // Get user role and build query based on role
-      const userRole = localStorage.getItem('userRole') || 'cashier';
-      
-      let queryParams = '';
-      if (userRole === 'accountant') {
-        // Accountants can see all tickets (archived and unarchived)
-        queryParams = ''; // No archived filter - fetch all
-      } else {
-        // Cashiers only see unarchived tickets
-        queryParams = '?archived=false';
-      }
-      
-      const response = await axios.get(`${baseUrl}/api/tickets/ticket-types${queryParams}`, {
+      const response = await axios.get(`${baseUrl}/api/tickets/ticket-types`, {
         headers: { Authorization: `Bearer ${token}` }
       });
       
-      console.log(`Ticket types fetched for role "${userRole}":`, response.data.length, 'types');
-      setAvailableTicketTypes(response.data);
+      setAvailableTicketTypes(response.data || []);
     } catch (error) {
       console.error('Error fetching ticket types:', error);
     }
@@ -325,31 +323,17 @@ const OrdersManagement = () => {
   
   // Fetch meals for adding to order
   const fetchMeals = async () => {
-    if (!user || !isAdmin()) return;
+    if (!user || !isAdmin() || !baseUrl) return;
 
     try {
       const token = localStorage.getItem('authToken');
-      
       if (!token) return;
       
-      // Get user role and build query based on role
-      const userRole = localStorage.getItem('userRole') || 'cashier';
-      
-      let queryParams = '';
-      if (userRole === 'accountant') {
-        // Accountants can see all meals (archived and unarchived)
-        queryParams = ''; // No archived filter - fetch all
-      } else {
-        // Cashiers only see unarchived meals
-        queryParams = '?archived=false';
-      }
-      
-      const response = await axios.get(`${baseUrl}/api/meals${queryParams}`, {
+      const response = await axios.get(`${baseUrl}/api/meals`, {
         headers: { Authorization: `Bearer ${token}` }
       });
       
-      console.log(`Meals fetched for role "${userRole}":`, response.data.length, 'meals');
-      setAvailableMeals(response.data);
+      setAvailableMeals(response.data || []);
     } catch (error) {
       console.error('Error fetching meals:', error);
     }
@@ -357,22 +341,20 @@ const OrdersManagement = () => {
 
   // Function to fetch payment methods from database
   const fetchPaymentMethods = async () => {
-    if (!user || !isAdmin()) return;
+    if (!user || !isAdmin() || !baseUrl) return;
 
     try {
       const token = localStorage.getItem('authToken');
-      
       if (!token) return;
       
       const response = await axios.get(`${baseUrl}/api/orders/payment-methods`, {
         headers: { Authorization: `Bearer ${token}` }
       });
       
-      setPaymentMethods(response.data);
-      console.log('Payment methods loaded:', response.data);
+      setPaymentMethods(response.data || []);
     } catch (error) {
       console.error('Error fetching payment methods:', error);
-      // Fallback to the specific methods you want
+      // Keep your existing fallback
       setPaymentMethods([
         { value: 'cash', label: 'Cash' },
         { value: 'visa', label: 'Visa' },
@@ -517,13 +499,17 @@ const OrdersManagement = () => {
   };
 
   const confirmDeleteOrder = async () => {
-    if (!orderToDelete) return;
+    if (!orderToDelete || !baseUrl) return;
 
     try {
       setLoading(true);
       
-      // Use the secure API client
-      await apiClient.delete(`/api/orders/${orderToDelete.order_id}`);
+      const token = localStorage.getItem('authToken');
+      if (!token) return;
+      
+      await axios.delete(`${baseUrl}/api/orders/${orderToDelete.order_id}`, {
+        headers: { Authorization: `Bearer ${token}` }
+      });
 
       notify.success('Order deleted successfully');
       setDeleteDialogOpen(false);
@@ -531,7 +517,7 @@ const OrdersManagement = () => {
       fetchOrders(); // Refresh orders
     } catch (error) {
       console.error('Error deleting order:', error);
-      notify.error(error.message || 'Failed to delete order');
+      notify.error(error.response?.data?.message || 'Failed to delete order');
     } finally {
       setLoading(false);
     }
@@ -772,6 +758,7 @@ const OrdersManagement = () => {
       price: meal.price
     };
     
+    // Calculate updated totals
     const ticketTotal = (editableOrder.tickets || []).reduce((sum, ticket) => {
       const price = parseFloat(ticket.sold_price) || 0;
       const quantity = parseInt(ticket.quantity) || 1;
@@ -1025,26 +1012,121 @@ const OrdersManagement = () => {
 
   // Save order changes with validation
   const saveOrderChanges = async () => {
-    if (!editableOrder) return;
+    if (!baseUrl) {
+      notify.error('API configuration not available');
+      return;
+    }
 
     try {
-      setLoading(true);
+      if (!editableOrder || !selectedOrder) return;
       
-      // Use the secure API client
-      await apiClient.put(`/api/orders/${editableOrder.order_id}`, {
-        addedTickets: editableOrder.addedTickets || [],
-        removedTickets: editableOrder.removedTickets || [],
-        addedMeals: editableOrder.addedMeals || [],
-        removedMeals: editableOrder.removedMeals || [],
-        payments: editableOrder.payments || []
-      });
-
-      notify.success('Order updated successfully');
+      // Validate payment total matches order total
+      const totalPayments = editableOrder.payments.reduce((sum, p) => sum + (parseFloat(p.amount) || 0), 0);
+      const orderTotal = parseFloat(editableOrder.total_amount) || 0;
+      const difference = Math.abs(totalPayments - orderTotal);
+      
+      if (difference >= 0.01) {
+        notify.error('Payment total must match order total - please adjust payment amounts');
+        return;
+      }
+      
+      setLoading(true);
+      const token = localStorage.getItem('authToken');
+      
+      if (!token) {
+        notify.error('Authentication required. Please log in again.');
+        setLoading(false);
+        return;
+      }
+      
+      // Check if there are actual changes to save
+      const hasChanges = (
+        (editableOrder?.addedTickets && editableOrder.addedTickets.length > 0) ||
+        (editableOrder?.removedTickets && editableOrder.removedTickets.length > 0) ||
+        (editableOrder?.addedMeals && editableOrder.addedMeals.length > 0) ||
+        (editableOrder?.removedMeals && editableOrder.removedMeals.length > 0) ||
+        (editableOrder?.payments && editableOrder?.originalPayments && 
+         JSON.stringify(editableOrder.payments.map(p => ({
+           method: p.method,
+           amount: parseFloat(p.amount).toFixed(2)
+         }))) !== JSON.stringify((editableOrder.originalPayments || []).map(p => ({
+           method: p.method,
+           amount: parseFloat(p.amount).toFixed(2)
+         }))))
+      );
+      
+      if (!hasChanges) {
+        notify.info('No changes detected');
+        setLoading(false);
+        return;
+      }
+      
+      // Format payload with careful number parsing
+      const payments = editableOrder.payments.map(payment => ({
+        method: payment.method,
+        amount: Number(parseFloat(payment.amount).toFixed(2))
+      }));
+      
+      // Sanitize arrays before sending
+      const addedTickets = Array.isArray(editableOrder.addedTickets) 
+        ? editableOrder.addedTickets.map(ticket => ({
+            ...ticket,
+            quantity: Number(ticket.quantity)
+          }))
+        : [];
+        
+      const removedTickets = Array.isArray(editableOrder.removedTickets)
+        ? editableOrder.removedTickets.map(ticket => ({
+            ...ticket,
+            quantity: Number(ticket.quantity)
+          }))
+        : [];
+        
+      const addedMeals = Array.isArray(editableOrder.addedMeals)
+        ? editableOrder.addedMeals.map(meal => ({
+            ...meal,
+            quantity: Number(meal.quantity),
+            price: Number(parseFloat(meal.price).toFixed(2))
+          }))
+        : [];
+        
+      const removedMeals = Array.isArray(editableOrder.removedMeals)
+        ? editableOrder.removedMeals.map(meal => ({
+            ...meal,
+            quantity: Number(meal.quantity)
+          }))
+        : [];
+    
+      // Build the update payload EXACTLY like the old working version
+      const updatePayload = {
+        order_id: selectedOrder.order_id,
+        addedTickets,
+        removedTickets,
+        addedMeals,
+        removedMeals,
+        payments
+      };
+      
+      console.log('Sending update payload:', updatePayload);
+      
+      // FIXED: Use axios directly with the correct endpoint like the old version
+      const response = await axios.put(
+        `${baseUrl}/api/orders/update`,
+        updatePayload,
+        { headers: { Authorization: `Bearer ${token}` } }
+      );
+      
+      console.log('Update response:', response.data);
+      
+      // Close dialog and show success message
       handleCloseEditDialog();
-      fetchOrders(); // Refresh orders
+      notify.success('Order updated successfully');
+      
+      // Refresh orders list
+      fetchOrders();
     } catch (error) {
-      console.error('Error updating order:', error);
-      notify.error(error.message || 'Failed to update order');
+      console.error('Error updating order:', error.response?.data || error);
+      notify.error(error.response?.data?.message || 'Failed to update order');
     } finally {
       setLoading(false);
     }
