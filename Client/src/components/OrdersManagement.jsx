@@ -241,8 +241,6 @@ const OrdersManagement = () => {
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [orderToDelete, setOrderToDelete] = useState(null);
 
-  const baseUrl = window.runtimeConfig?.apiBaseUrl;
-
   // Update rows per page when screen size changes
   useEffect(() => {
     setRowsPerPage(isMobile ? 5 : 10);
@@ -276,28 +274,23 @@ const OrdersManagement = () => {
   
   // Fetch orders from API
   const fetchOrders = async () => {
-    if (!user || !isAdmin() || !baseUrl) return;
-
     try {
       setLoading(true);
       setError('');
       
-      const token = localStorage.getItem('authToken');
-      if (!token) return;
-
-      // Use the range-report endpoint that exists in your server
-      const response = await axios.get(`${baseUrl}/api/orders/range-report`, {
-        headers: { Authorization: `Bearer ${token}` },
-        params: {
-          startDate: fromDate.format('YYYY-MM-DD'),
-          endDate: toDate.format('YYYY-MM-DD')
-        }
+      // Format dates for API
+      const startDate = fromDate.format('YYYY-MM-DD');
+      const endDate = toDate.format('YYYY-MM-DD');
+      
+      // Use the correct apiClient.request method
+      const data = await apiClient.request(`/api/orders/range-report?startDate=${startDate}&endDate=${endDate}`, {
+        method: 'GET'
       });
       
-      setOrders(Array.isArray(response.data) ? response.data : []);
+      setOrders(data);
     } catch (error) {
       console.error('Error fetching orders:', error);
-      setError(error.response?.data?.message || 'Failed to fetch orders');
+      setError(error.message || 'Failed to fetch orders');
     } finally {
       setLoading(false);
     }
@@ -305,56 +298,55 @@ const OrdersManagement = () => {
 
   // Fetch ticket types for adding tickets to order
   const fetchTicketTypes = async () => {
-    if (!user || !isAdmin() || !baseUrl) return;
+    if (!user || !isAdmin()) return;
 
     try {
-      const token = localStorage.getItem('authToken');
-      if (!token) return;
-      
-      const response = await axios.get(`${baseUrl}/api/tickets/ticket-types`, {
-        headers: { Authorization: `Bearer ${token}` }
+      // Use the correct apiClient.request method
+      const response = await apiClient.request('/api/tickets/ticket-types', {
+        method: 'GET'
       });
       
-      setAvailableTicketTypes(response.data || []);
+      console.log('All ticket types fetched:', response.length, 'types');
+      setAvailableTicketTypes(response);
     } catch (error) {
       console.error('Error fetching ticket types:', error);
+      setAvailableTicketTypes([]);
     }
   };
   
   // Fetch meals for adding to order
   const fetchMeals = async () => {
-    if (!user || !isAdmin() || !baseUrl) return;
+    if (!user || !isAdmin()) return;
 
     try {
-      const token = localStorage.getItem('authToken');
-      if (!token) return;
-      
-      const response = await axios.get(`${baseUrl}/api/meals`, {
-        headers: { Authorization: `Bearer ${token}` }
+      // Use the correct apiClient.request method
+      const response = await apiClient.request('/api/meals', {
+        method: 'GET'
       });
       
-      setAvailableMeals(response.data || []);
+      console.log('All meals fetched:', response.length, 'meals');
+      setAvailableMeals(response);
     } catch (error) {
       console.error('Error fetching meals:', error);
+      setAvailableMeals([]);
     }
   };
 
   // Function to fetch payment methods from database
   const fetchPaymentMethods = async () => {
-    if (!user || !isAdmin() || !baseUrl) return;
+    if (!user || !isAdmin()) return;
 
     try {
-      const token = localStorage.getItem('authToken');
-      if (!token) return;
-      
-      const response = await axios.get(`${baseUrl}/api/orders/payment-methods`, {
-        headers: { Authorization: `Bearer ${token}` }
+      // Use the correct apiClient.request method
+      const response = await apiClient.request('/api/orders/payment-methods', {
+        method: 'GET'
       });
       
-      setPaymentMethods(response.data || []);
+      setPaymentMethods(response);
+      console.log('Payment methods loaded:', response);
     } catch (error) {
       console.error('Error fetching payment methods:', error);
-      // Keep your existing fallback
+      // Fallback to hardcoded methods
       setPaymentMethods([
         { value: 'cash', label: 'Cash' },
         { value: 'visa', label: 'Visa' },
@@ -499,16 +491,14 @@ const OrdersManagement = () => {
   };
 
   const confirmDeleteOrder = async () => {
-    if (!orderToDelete || !baseUrl) return;
+    if (!orderToDelete) return;
 
     try {
       setLoading(true);
       
-      const token = localStorage.getItem('authToken');
-      if (!token) return;
-      
-      await axios.delete(`${baseUrl}/api/orders/${orderToDelete.order_id}`, {
-        headers: { Authorization: `Bearer ${token}` }
+      // Use the correct apiClient.request method
+      await apiClient.request(`/api/orders/${orderToDelete.order_id}`, {
+        method: 'DELETE'
       });
 
       notify.success('Order deleted successfully');
@@ -517,7 +507,7 @@ const OrdersManagement = () => {
       fetchOrders(); // Refresh orders
     } catch (error) {
       console.error('Error deleting order:', error);
-      notify.error(error.response?.data?.message || 'Failed to delete order');
+      notify.error(error.message || 'Failed to delete order');
     } finally {
       setLoading(false);
     }
@@ -758,7 +748,6 @@ const OrdersManagement = () => {
       price: meal.price
     };
     
-    // Calculate updated totals
     const ticketTotal = (editableOrder.tickets || []).reduce((sum, ticket) => {
       const price = parseFloat(ticket.sold_price) || 0;
       const quantity = parseInt(ticket.quantity) || 1;
@@ -1012,121 +1001,32 @@ const OrdersManagement = () => {
 
   // Save order changes with validation
   const saveOrderChanges = async () => {
-    if (!baseUrl) {
-      notify.error('API configuration not available');
-      return;
-    }
+    if (!editableOrder) return;
 
     try {
-      if (!editableOrder || !selectedOrder) return;
-      
-      // Validate payment total matches order total
-      const totalPayments = editableOrder.payments.reduce((sum, p) => sum + (parseFloat(p.amount) || 0), 0);
-      const orderTotal = parseFloat(editableOrder.total_amount) || 0;
-      const difference = Math.abs(totalPayments - orderTotal);
-      
-      if (difference >= 0.01) {
-        notify.error('Payment total must match order total - please adjust payment amounts');
-        return;
-      }
-      
       setLoading(true);
-      const token = localStorage.getItem('authToken');
       
-      if (!token) {
-        notify.error('Authentication required. Please log in again.');
-        setLoading(false);
-        return;
-      }
-      
-      // Check if there are actual changes to save
-      const hasChanges = (
-        (editableOrder?.addedTickets && editableOrder.addedTickets.length > 0) ||
-        (editableOrder?.removedTickets && editableOrder.removedTickets.length > 0) ||
-        (editableOrder?.addedMeals && editableOrder.addedMeals.length > 0) ||
-        (editableOrder?.removedMeals && editableOrder.removedMeals.length > 0) ||
-        (editableOrder?.payments && editableOrder?.originalPayments && 
-         JSON.stringify(editableOrder.payments.map(p => ({
-           method: p.method,
-           amount: parseFloat(p.amount).toFixed(2)
-         }))) !== JSON.stringify((editableOrder.originalPayments || []).map(p => ({
-           method: p.method,
-           amount: parseFloat(p.amount).toFixed(2)
-         }))))
-      );
-      
-      if (!hasChanges) {
-        notify.info('No changes detected');
-        setLoading(false);
-        return;
-      }
-      
-      // Format payload with careful number parsing
-      const payments = editableOrder.payments.map(payment => ({
-        method: payment.method,
-        amount: Number(parseFloat(payment.amount).toFixed(2))
-      }));
-      
-      // Sanitize arrays before sending
-      const addedTickets = Array.isArray(editableOrder.addedTickets) 
-        ? editableOrder.addedTickets.map(ticket => ({
-            ...ticket,
-            quantity: Number(ticket.quantity)
-          }))
-        : [];
-        
-      const removedTickets = Array.isArray(editableOrder.removedTickets)
-        ? editableOrder.removedTickets.map(ticket => ({
-            ...ticket,
-            quantity: Number(ticket.quantity)
-          }))
-        : [];
-        
-      const addedMeals = Array.isArray(editableOrder.addedMeals)
-        ? editableOrder.addedMeals.map(meal => ({
-            ...meal,
-            quantity: Number(meal.quantity),
-            price: Number(parseFloat(meal.price).toFixed(2))
-          }))
-        : [];
-        
-      const removedMeals = Array.isArray(editableOrder.removedMeals)
-        ? editableOrder.removedMeals.map(meal => ({
-            ...meal,
-            quantity: Number(meal.quantity)
-          }))
-        : [];
-    
-      // Build the update payload EXACTLY like the old working version
-      const updatePayload = {
-        order_id: selectedOrder.order_id,
-        addedTickets,
-        removedTickets,
-        addedMeals,
-        removedMeals,
-        payments
-      };
-      
-      console.log('Sending update payload:', updatePayload);
-      
-      // FIXED: Use axios directly with the correct endpoint like the old version
-      const response = await axios.put(
-        `${baseUrl}/api/orders/update`,
-        updatePayload,
-        { headers: { Authorization: `Bearer ${token}` } }
-      );
-      
-      console.log('Update response:', response.data);
-      
-      // Close dialog and show success message
-      handleCloseEditDialog();
+      // Use the correct apiClient.request method
+      await apiClient.request(`/api/orders/${editableOrder.order_id}`, {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          addedTickets: editableOrder.addedTickets || [],
+          removedTickets: editableOrder.removedTickets || [],
+          addedMeals: editableOrder.addedMeals || [],
+          removedMeals: editableOrder.removedMeals || [],
+          payments: editableOrder.payments || []
+        })
+      });
+
       notify.success('Order updated successfully');
-      
-      // Refresh orders list
-      fetchOrders();
+      handleCloseEditDialog();
+      fetchOrders(); // Refresh orders
     } catch (error) {
-      console.error('Error updating order:', error.response?.data || error);
-      notify.error(error.response?.data?.message || 'Failed to update order');
+      console.error('Error updating order:', error);
+      notify.error(error.message || 'Failed to update order');
     } finally {
       setLoading(false);
     }
@@ -2455,4 +2355,3 @@ const OrdersManagement = () => {
 };
 
 export default OrdersManagement;
-
