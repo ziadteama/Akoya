@@ -1001,29 +1001,105 @@ const OrdersManagement = () => {
 
   // Save order changes with validation
   const saveOrderChanges = async () => {
-    if (!editableOrder) return;
+    if (!editableOrder || !selectedOrder) return;
 
     try {
+      // Force recalculation to ensure everything is in sync
+      recalculateOrderTotal();
+
+      // Get all payment amounts
+      const totalPayments = editableOrder.payments
+        .reduce((sum, payment) => sum + (parseFloat(payment.amount) || 0), 0);
+
+      const grossTotal = parseFloat(editableOrder.gross_total || 0);
+
+      // NEW VALIDATION: Check if total payments match gross total
+      if (Math.abs(totalPayments - grossTotal) > 0.01) {
+        notify.error(
+          `Total payments (${formatCurrency(totalPayments)}) must match the gross total (${formatCurrency(grossTotal)})`
+        );
+        return;
+      }
+
+      // Separate discount and non-discount payments for backend
+      const discountAmount = editableOrder.payments
+        .filter(payment => payment.method === 'discount')
+        .reduce((sum, payment) => sum + (parseFloat(payment.amount) || 0), 0);
+
+      const nonDiscountPaymentsTotal = editableOrder.payments
+        .filter(payment => payment.method !== 'discount')
+        .reduce((sum, payment) => sum + (parseFloat(payment.amount) || 0), 0);
+
       setLoading(true);
-      
-      // Use the correct apiClient.request method
-      await apiClient.request(`/api/orders/${editableOrder.order_id}`, {
+
+      // Format payments for submission
+      const payments = editableOrder.payments.map(payment => ({
+        method: payment.method,
+        amount: Number(parseFloat(payment.amount).toFixed(2))
+      }));
+
+      // Sanitize arrays before sending
+      const addedTickets = Array.isArray(editableOrder.addedTickets)
+        ? editableOrder.addedTickets.map(ticket => ({
+            ...ticket,
+            quantity: Number(ticket.quantity)
+          }))
+        : [];
+
+      const removedTickets = Array.isArray(editableOrder.removedTickets)
+        ? editableOrder.removedTickets.map(ticket => ({
+            ...ticket,
+            quantity: Number(ticket.quantity)
+          }))
+        : [];
+
+      const addedMeals = Array.isArray(editableOrder.addedMeals)
+        ? editableOrder.addedMeals.map(meal => ({
+            ...meal,
+            quantity: Number(meal.quantity),
+            price: Number(parseFloat(meal.price).toFixed(2))
+          }))
+        : [];
+
+      const removedMeals = Array.isArray(editableOrder.removedMeals)
+        ? editableOrder.removedMeals.map(meal => ({
+            ...meal,
+            quantity: Number(meal.quantity)
+          }))
+        : [];
+
+      // Build the update payload
+      const updatePayload = {
+        order_id: selectedOrder.order_id,
+        addedTickets,
+        removedTickets,
+        addedMeals,
+        removedMeals,
+        payments,
+        total_amount: nonDiscountPaymentsTotal, // Non-discount total
+        gross_total: grossTotal, // Gross total for reference
+        discount_amount: discountAmount // Track discount separately
+      };
+
+      console.log('Sending update payload:', updatePayload);
+
+      // Send the update request using the existing endpoint
+      await apiClient.request('/api/orders/update', {
         method: 'PUT',
         headers: {
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify({
-          addedTickets: editableOrder.addedTickets || [],
-          removedTickets: editableOrder.removedTickets || [],
-          addedMeals: editableOrder.addedMeals || [],
-          removedMeals: editableOrder.removedMeals || [],
-          payments: editableOrder.payments || []
-        })
+        body: JSON.stringify(updatePayload)
       });
 
-      notify.success('Order updated successfully');
+      console.log('Order updated successfully');
+
+      // Close dialog and show success message
       handleCloseEditDialog();
-      fetchOrders(); // Refresh orders
+      notify.success('Order updated successfully');
+
+      // Refresh orders list
+      fetchOrders();
     } catch (error) {
       console.error('Error updating order:', error);
       notify.error(error.message || 'Failed to update order');
@@ -1406,8 +1482,8 @@ const OrdersManagement = () => {
 
       case 2: // Payment Tab
         const totalPayments = editableOrder.payments.reduce((sum, p) => sum + (parseFloat(p.amount) || 0), 0);
-        const orderTotal = parseFloat(editableOrder.total_amount) || 0;
-        const difference = totalPayments - orderTotal;
+        const grossTotal = parseFloat(editableOrder.gross_total) || 0; // Changed from total_amount
+        const difference = totalPayments - grossTotal; // Changed validation
         const isValid = Math.abs(difference) < 0.01;
         
         return (
@@ -1564,27 +1640,7 @@ const OrdersManagement = () => {
                     color="text.secondary"
                     sx={{ fontSize: { xs: '0.75rem', sm: '0.8rem' } }}
                   >
-                    Gross Total: {formatCurrency(editableOrder.gross_total || 0)}
-                  </Typography>
-                  {editableOrder.payments.some(p => p.method === 'discount') && (
-                    <Typography 
-                      variant="body2" 
-                      color="error.main"
-                      sx={{ fontSize: { xs: '0.75rem', sm: '0.8rem' } }}
-                    >
-                      Discount: -{formatCurrency(
-                        editableOrder.payments
-                          .filter(p => p.method === 'discount')
-                          .reduce((sum, p) => sum + (parseFloat(p.amount) || 0), 0)
-                      )}
-                    </Typography>
-                  )}
-                  <Typography 
-                    variant="body2" 
-                    color="text.secondary"
-                    sx={{ fontSize: { xs: '0.75rem', sm: '0.8rem' } }}
-                  >
-                    Net Total: {formatCurrency(orderTotal)}
+                    Gross Total: {formatCurrency(grossTotal)}
                   </Typography>
                   <Typography 
                     variant="body2" 
@@ -2077,6 +2133,7 @@ const OrdersManagement = () => {
           bgcolor: 'background.paper',
           // Mobile adjustments
           ...(isMobile && {
+
             // Add top padding for mobile browser UI
             pt: { xs: 2 },
             // Ensure it's visible above browser chrome
@@ -2236,9 +2293,10 @@ const OrdersManagement = () => {
             disabled={
               loading || 
               !editableOrder || 
+              // NEW VALIDATION: Check if total payments match gross total
               Math.abs(
                 (editableOrder?.payments?.reduce((sum, p) => sum + (parseFloat(p.amount) || 0), 0) || 0) - 
-                (parseFloat(editableOrder?.total_amount) || 0)
+                (parseFloat(editableOrder?.gross_total) || 0) // Changed from total_amount to gross_total
               ) >= 0.01 ||
               !(
                 (editableOrder?.addedTickets && editableOrder.addedTickets.length > 0) ||
@@ -2325,6 +2383,7 @@ const OrdersManagement = () => {
             </Box>
           )}
         </DialogContent>
+       // Fix the ending - replace the malformed button with correct syntax
         <DialogActions sx={{ 
           p: { xs: 1.5, sm: 2 },
           gap: 1
@@ -2340,18 +2399,18 @@ const OrdersManagement = () => {
             onClick={confirmDeleteOrder}
             color="error"
             variant="contained"
-            startIcon={<DeleteIcon fontSize="small" />}
             disabled={loading}
+            startIcon={<DeleteIcon fontSize="small" />}
             size="small"
             sx={{ flex: 1 }}
           >
-            Delete
+            {loading ? 'Deleting...' : 'Delete'}
           </Button>
         </DialogActions>
       </Dialog>
-        </Box>
-      </LocalizationProvider>
-    );
+      </Box>
+    </LocalizationProvider>
+  );
 };
 
 export default OrdersManagement;
