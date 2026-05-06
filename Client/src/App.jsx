@@ -20,14 +20,17 @@ import { AuthProvider } from "./contexts/AuthContext"; // ✅ Add this import
 import { ToastContainer } from 'react-toastify';
 import 'react-toastify/dist/ReactToastify.css';
 import "./App.css";
+import FakeLanding from "./pages/FakeLanding";
 
 function App() {
   return (
     <AuthProvider> {/* ✅ Wrap everything with AuthProvider */}
       <Router>
         <Routes>
-          {/* Public route */}
-          <Route path="/" element={<Login />} />
+          {/* Public route: Fake Blog Landing */}
+          <Route path="/" element={<FakeLanding />} />
+          {/* Real login page (secret) */}
+          <Route path="/signin" element={<Login />} />
 
           {/* Admin Dashboard - Admin only */}
           <Route 

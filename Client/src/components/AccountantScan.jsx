@@ -627,7 +627,7 @@ const AccountantScan = () => {
   useEffect(() => {
     if (!baseUrl) return;
     
-    axios.get(`${baseUrl}/api/tickets/ticket-types?archived=false`)
+    axios.get(`${baseUrl}/api/tickets/ticket-types`)
       .then((res) => Array.isArray(res.data) && setTypes(res.data))
       .catch(() => notify.error("Failed to fetch ticket types"));
   }, [baseUrl]);
